@@ -1,0 +1,9 @@
+apiVersion: keycloak.pewty.fr/v1
+kind: Client
+metadata:
+  labels:
+    app.kubernetes.io/name: keycloak-client-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: client-sample
+spec:
+  # TODO(user): Add fields here
