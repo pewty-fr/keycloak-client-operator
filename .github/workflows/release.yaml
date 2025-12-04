@@ -1,9 +1,9 @@
 name: Release
 
-on:
-  push:
-    branches:
-      - main
+on:  # yamllint disable-line rule:truthy
+  release:
+    types:
+      - published
 
 permissions:
   contents: write
@@ -11,31 +11,41 @@ permissions:
   packages: write
 
 jobs:
-  release-please:
-    name: Create Release PRs
+  detect-component:
+    name: Detect Released Component
     runs-on: ubuntu-latest
     outputs:
-      operator_release_created: ${{ steps.release.outputs['--release_created'] }}
-      operator_tag_name: ${{ steps.release.outputs['--tag_name'] }}
-      operator_version: ${{ steps.release.outputs['--version'] }}
-      operator_upload_url: ${{ steps.release.outputs['--upload_url'] }}
-      chart_release_created: ${{ steps.release.outputs['chart--release_created'] }}
-      chart_tag_name: ${{ steps.release.outputs['chart--tag_name'] }}
-      chart_version: ${{ steps.release.outputs['chart--version'] }}
-      chart_upload_url: ${{ steps.release.outputs['chart--upload_url'] }}
+      is_operator: ${{ steps.detect.outputs.is_operator }}
+      is_chart: ${{ steps.detect.outputs.is_chart }}
+      version: ${{ steps.detect.outputs.version }}
     steps:
-      - name: Run release-please
-        id: release
-        uses: googleapis/release-please-action@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+      - name: Detect component from tag
+        id: detect
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "Release tag: $TAG"
+          
+          # Chart releases have a prefix like "chart-v" or contain "-chart"
+          if [[ "$TAG" == *"chart"* ]]; then
+            echo "is_operator=false" >> $GITHUB_OUTPUT
+            echo "is_chart=true" >> $GITHUB_OUTPUT
+            # Extract version (remove chart prefix/suffix)
+            VERSION=$(echo "$TAG" | sed -E 's/.*chart-?v?//; s/-chart.*//')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Detected: Helm Chart release (version: $VERSION)"
+          else
+            echo "is_operator=true" >> $GITHUB_OUTPUT
+            echo "is_chart=false" >> $GITHUB_OUTPUT
+            # Extract version (remove v prefix if present)
+            VERSION=$(echo "$TAG" | sed 's/^v//')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Detected: Operator release (version: $VERSION)"
+          fi
 
   build-and-push:
     name: Build and Push Release Image
-    needs: release-please
-    if: needs.release-please.outputs.operator_release_created == 'true'
+    needs: detect-component
+    if: needs.detect-component.outputs.is_operator == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -59,9 +69,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.operator_version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.operator_version }}
-            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.operator_version }}
+            type=semver,pattern={{version}},value=${{ needs.detect-component.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.detect-component.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.detect-component.outputs.version }}
             type=raw,value=latest
 
       - name: Build and push Docker image
@@ -79,7 +89,7 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
-          image: ghcr.io/${{ github.repository }}:${{ needs.release-please.outputs.operator_version }}
+          image: ghcr.io/${{ github.repository }}:${{ needs.detect-component.outputs.version }}
           format: spdx-json
           output-file: sbom.spdx.json
 
@@ -87,23 +97,13 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const version = '${{ needs.release-please.outputs.operator_version }}';
+            const version = '${{ needs.detect-component.outputs.version }}';
             const digest = '${{ steps.build.outputs.digest }}';
             const repo = '${{ github.repository }}';
-            const tagName = '${{ needs.release-please.outputs.operator_tag_name }}';
+            const tagName = '${{ github.event.release.tag_name }}';
             
-            // Get the release
-            const releases = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 10
-            });
-            
-            const release = releases.data.find(r => r.tag_name === tagName);
-            if (!release) {
-              core.setFailed('Release not found');
-              return;
-            }
+            // Get the current release
+            const release = context.payload.release;
             
             // Generate Docker images section
             const dockerSection = `
@@ -158,15 +158,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.release-please.outputs.operator_upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: ./sbom.spdx.json
           asset_name: sbom.spdx.json
           asset_content_type: application/json
 
   generate-install-manifest:
     name: Generate Installation Manifest
-    needs: [release-please, build-and-push]
-    if: needs.release-please.outputs.operator_release_created == 'true'
+    needs: [detect-component, build-and-push]
+    if: needs.detect-component.outputs.is_operator == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -181,7 +181,7 @@ jobs:
         run: |
           helm template keycloak-client-operator ./chart \
             --set image.repository=ghcr.io/${{ github.repository }} \
-            --set image.tag=${{ needs.release-please.outputs.operator_version }} \
+            --set image.tag=${{ needs.detect-component.outputs.version }} \
             --namespace keycloak-client-operator-system \
             --create-namespace \
             > install.yaml
@@ -191,15 +191,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.release-please.outputs.operator_upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: ./install.yaml
           asset_name: install.yaml
           asset_content_type: application/x-yaml
 
   publish-helm-chart:
     name: Publish Helm Chart
-    needs: release-please
-    if: needs.release-please.outputs.chart_release_created == 'true'
+    needs: detect-component
+    if: needs.detect-component.outputs.is_chart == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -221,29 +221,18 @@ jobs:
 
       - name: Push Helm chart to OCI registry
         run: |
-          helm push keycloak-client-operator-${{ needs.release-please.outputs.chart_version }}.tgz \
+          helm push keycloak-client-operator-${{ needs.detect-component.outputs.version }}.tgz \
             oci://ghcr.io/${{ github.repository_owner }}/keycloak-client-operator-chart
 
       - name: Update release with Helm chart info
         uses: actions/github-script@v7
         with:
           script: |
-            const version = '${{ needs.release-please.outputs.chart_version }}';
+            const version = '${{ needs.detect-component.outputs.version }}';
             const owner = '${{ github.repository_owner }}';
-            const tagName = '${{ needs.release-please.outputs.chart_tag_name }}';
             
-            // Get the release
-            const releases = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 10
-            });
-            
-            const release = releases.data.find(r => r.tag_name === tagName);
-            if (!release) {
-              core.setFailed('Release not found');
-              return;
-            }
+            // Get the current release
+            const release = context.payload.release;
             
             // Generate Helm chart section
             const helmSection = `
