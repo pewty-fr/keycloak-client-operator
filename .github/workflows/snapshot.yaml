@@ -31,16 +31,6 @@ jobs:
             const comment = context.payload.comment.body;
             core.setOutput('build_docker', comment === '/snapshot docker' ? 'true' : 'false');
             core.setOutput('build_helm', comment === '/snapshot helm' ? 'true' : 'false');
-    
-    steps:
-      - name: Check which snapshot to build
-        id: check
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const comment = context.payload.comment.body;
-            core.setOutput('build_docker', comment === '/snapshot docker' ? 'true' : 'false');
-            core.setOutput('build_helm', comment === '/snapshot helm' ? 'true' : 'false');
       
       - name: Get PR details
         id: pr

@@ -29,15 +29,6 @@ jobs:
       - name: Run tests
         run: make test
 
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./cover.out
-          flags: unittests
-          name: codecov-umbrella
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
   lint:
     name: Lint
     runs-on: ubuntu-latest
