@@ -1,0 +1,21 @@
+# ko build configuration
+# https://ko.build/configuration/
+
+# Default base image (distroless static nonroot)
+defaultBaseImage: gcr.io/distroless/static:nonroot
+
+# Build flags
+builds:
+  - id: manager
+    main: ./cmd/main.go
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+# Default platforms for multi-arch builds
+defaultPlatforms:
+  - linux/amd64
+  - linux/arm64

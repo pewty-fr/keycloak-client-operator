@@ -129,8 +129,9 @@ make install
 make run
 
 # Or build and deploy to cluster
-make docker-build docker-push IMG=your-registry/keycloak-client-operator:tag
-make deploy IMG=your-registry/keycloak-client-operator:tag
+export KO_DOCKER_REPO=your-registry/keycloak-client-operator
+make ko-build
+make deploy IMG=your-registry/keycloak-client-operator:latest
 ```
 
 ## 📖 Usage
@@ -299,11 +300,12 @@ make lint
 # Build binary
 make build
 
-# Build Docker image
-make docker-build IMG=your-registry/keycloak-client-operator:tag
+# Build and push container image with ko
+export KO_DOCKER_REPO=your-registry/keycloak-client-operator
+make ko-build
 
-# Push Docker image
-make docker-push IMG=your-registry/keycloak-client-operator:tag
+# Build locally for testing (single platform)
+make ko-build-local
 ```
 
 ### Local Development

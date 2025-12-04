@@ -64,18 +64,14 @@ jobs:
       - name: Build binary
         run: make build
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Install ko
+        run: go install github.com/google/ko@latest
 
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64
-          push: false
-          tags: controller:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Build container image with ko
+        env:
+          KO_DOCKER_REPO: test
+        run: |
+          ko build --local --bare ./cmd/main.go
 
   helm:
     name: Validate Helm Chart
