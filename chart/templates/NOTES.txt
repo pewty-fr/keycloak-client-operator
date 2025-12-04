@@ -1,0 +1,59 @@
+# NOTES.txt - displayed after installation
+{{- $fullName := include "keycloak-client-operator.fullname" . -}}
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+The Keycloak Client Operator has been deployed to namespace: {{ .Release.Namespace }}
+
+To verify the deployment:
+
+  kubectl get deployment -n {{ .Release.Namespace }} {{ $fullName }}-controller-manager
+
+To check the operator logs:
+
+  kubectl logs -n {{ .Release.Namespace }} -l control-plane=controller-manager -f
+
+{{- if not .Values.keycloak.existingSecret }}
+{{- if not .Values.keycloak.url }}
+
+⚠️  WARNING: Keycloak connection is not configured!
+   Please update your deployment with Keycloak credentials:
+
+   helm upgrade {{ .Release.Name }} ./chart \
+     --set keycloak.url=https://your-keycloak-url \
+     --set keycloak.user=admin \
+     --set keycloak.password=your-password
+
+   Or use an existing secret:
+
+   kubectl create secret generic keycloak-credentials \
+     --from-literal=KEYCLOAK_URL=https://your-keycloak-url \
+     --from-literal=KEYCLOAK_USER=admin \
+     --from-literal=KEYCLOAK_PASSWORD=your-password
+
+   helm upgrade {{ .Release.Name }} ./chart \
+     --set keycloak.existingSecret=keycloak-credentials
+
+{{- end }}
+{{- end }}
+
+To create a Keycloak client, apply a Client custom resource:
+
+  cat <<EOF | kubectl apply -f -
+  apiVersion: keycloak.pewty.fr/v1
+  kind: Client
+  metadata:
+    name: example-client
+    namespace: {{ .Release.Namespace }}
+  spec:
+    realm: master
+    client:
+      clientId: my-app
+      enabled: true
+      protocol: openid-connect
+      redirectUris:
+        - https://myapp.example.com/callback
+  EOF
+
+For more information, visit: https://github.com/pewty/keycloak-client-operator

@@ -1,0 +1,3 @@
+{{- if .Values.crds.install -}}
+{{ .Files.Get "crds/keycloak.pewty.fr_clients.yaml" }}
+{{- end }}

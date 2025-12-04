@@ -23,7 +23,6 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// ClientSpec defines the desired state of Client
 type ClientSpec struct {
 	Realm  *string              `json:"realm"`
 	Client ClientRepresentation `json:"client"`
@@ -71,9 +70,9 @@ type ClientRepresentation struct {
 	UseTemplateMappers                 *bool                          `json:"useTemplateMappers,omitempty"`
 	DefaultClientScopes                []string                       `json:"defaultClientScopes,omitempty"`
 	OptionalClientScopes               []string                       `json:"optionalClientScopes,omitempty"`
-	AuthorizationSettings              *ResourceServerRepresentation  `json:"authorizationSettings,omitempty"`
-	Access                             map[string]bool                `json:"access,omitempty"`
-	Origin                             *string                        `json:"origin,omitempty"`
+	// AuthorizationSettings omitted due to CRD complexity - can be managed via Keycloak API directly
+	Access map[string]bool `json:"access,omitempty"`
+	Origin *string         `json:"origin,omitempty"`
 }
 
 // ProtocolMapperRepresentation represents a protocol mapper for a client.
@@ -84,101 +83,6 @@ type ProtocolMapperRepresentation struct {
 	ProtocolMapper *string           `json:"protocolMapper,omitempty"`
 	Config         map[string]string `json:"config,omitempty"`
 }
-
-// ResourceServerRepresentation represents the authorization settings for a client.
-type ResourceServerRepresentation struct {
-	ID                            *string                  `json:"id,omitempty"`
-	ClientID                      *string                  `json:"clientId,omitempty"`
-	Name                          *string                  `json:"name,omitempty"`
-	AllowRemoteResourceManagement *bool                    `json:"allowRemoteResourceManagement,omitempty"`
-	PolicyEnforcementMode         PolicyEnforcementMode    `json:"policyEnforcementMode,omitempty"`
-	Resources                     []ResourceRepresentation `json:"resources,omitempty"`
-	Policies                      []PolicyRepresentation   `json:"policies,omitempty"`
-	Scopes                        []ScopeRepresentation    `json:"scopes,omitempty"`
-	DecisionStrategy              DecisionStrategy         `json:"decisionStrategy,omitempty"`
-	AuthorizationSchema           AuthorizationSchema      `json:"authorizationSchema,omitempty"`
-}
-
-// ResourceRepresentation represents a Keycloak resource.
-type ResourceRepresentation struct {
-	ID                 *string                      `json:"_id,omitempty"`
-	Name               *string                      `json:"name,omitempty"`
-	Uris               []string                     `json:"uris,omitempty"`
-	Type               *string                      `json:"type,omitempty"`
-	Scopes             []ScopeRepresentation        `json:"scopes,omitempty"`
-	IconURI            *string                      `json:"icon_uri,omitempty"`
-	Owner              *ResourceOwnerRepresentation `json:"owner,omitempty"`
-	OwnerManagedAccess *bool                        `json:"ownerManagedAccess,omitempty"`
-	DisplayName        *string                      `json:"displayName,omitempty"`
-	Attributes         map[string][]string          `json:"attributes,omitempty"`
-	Uri                string                       `json:"uri,omitempty"`
-	ScopesUma          []ScopeRepresentation        `json:"scopesUma,omitempty"`
-}
-
-// ResourceOwnerRepresentation represents the owner of a resource.
-type ResourceOwnerRepresentation struct {
-	ID   *string `json:"id,omitempty"`
-	Name *string `json:"name,omitempty"`
-}
-
-// PolicyRepresentation represents a Keycloak policy.
-type PolicyRepresentation struct {
-	ID               *string                  `json:"id,omitempty"`
-	Name             *string                  `json:"name,omitempty"`
-	Description      *string                  `json:"description,omitempty"`
-	Type             *string                  `json:"type,omitempty"`
-	Policies         []string                 `json:"policies,omitempty"`
-	Resources        []string                 `json:"resources,omitempty"`
-	Scopes           []string                 `json:"scopes,omitempty"`
-	Logic            *string                  `json:"logic,omitempty"`
-	DecisionStrategy *string                  `json:"decisionStrategy,omitempty"`
-	Owner            *string                  `json:"owner,omitempty"`
-	ResourceType     *string                  `json:"resourceType,omitempty"`
-	ResourcesData    []ResourceRepresentation `json:"resourcesData,omitempty"`
-	ScopesData       []ScopeRepresentation    `json:"scopesData,omitempty"`
-	Config           map[string]string        `json:"config,omitempty"`
-}
-
-// ScopeRepresentation represents a Keycloak scope.
-type ScopeRepresentation struct {
-	ID          *string                  `json:"id,omitempty"`
-	Name        *string                  `json:"name,omitempty"`
-	IconURI     *string                  `json:"iconUri,omitempty"`
-	Policies    []PolicyRepresentation   `json:"policies,omitempty"`
-	Resources   []ResourceRepresentation `json:"resources,omitempty"`
-	DisplayName *string                  `json:"displayName,omitempty"`
-}
-
-// AuthorizationSchema represents the AuthorizationSchema object in Keycloak.
-type AuthorizationSchema struct {
-	ResourceTypes map[string]ResourceType `json:"resourceTypes,omitempty"`
-}
-
-// ResourceType represents a resource type in the AuthorizationSchema.
-type ResourceType struct {
-	Type         *string             `json:"type,omitempty"`
-	Scopes       []string            `json:"scopes,omitempty"`
-	ScopeAliases map[string][]string `json:"scopeAliases,omitempty"`
-	GroupType    *string             `json:"groupType,omitempty"`
-}
-
-// PolicyEnforcementMode represents the enforcement mode for Keycloak authorization policies.
-type PolicyEnforcementMode string
-
-const (
-    PolicyEnforcementModeEnforcing  PolicyEnforcementMode = "ENFORCING"
-    PolicyEnforcementModePermissive PolicyEnforcementMode = "PERMISSIVE"
-    PolicyEnforcementModeDisabled   PolicyEnforcementMode = "DISABLED"
-)
-
-// DecisionStrategy represents the decision strategy for Keycloak authorization policies.
-type DecisionStrategy string
-
-const (
-    DecisionStrategyAffirmative DecisionStrategy = "AFFIRMATIVE"
-    DecisionStrategyUnanimous   DecisionStrategy = "UNANIMOUS"
-    DecisionStrategyConsensus   DecisionStrategy = "CONSENSUS"
-)
 
 // ClientStatus defines the observed state of Client.
 type ClientStatus struct {
@@ -212,7 +116,7 @@ type Client struct {
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// spec defines the desired state of Client
 	// +required
@@ -220,7 +124,7 @@ type Client struct {
 
 	// status defines the observed state of Client
 	// +optional
-	Status ClientStatus `json:"status,omitempty,omitzero"`
+	Status ClientStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
@@ -228,7 +132,7 @@ type Client struct {
 // ClientList contains a list of Client
 type ClientList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []Client `json:"items"`
 }
 

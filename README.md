@@ -1,123 +1,345 @@
-# keycloak-client-operator
-// TODO(user): Add simple overview of use/purpose
+<div align="center">
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+# 🔐 Keycloak Client Operator
 
-## Getting Started
+**Kubernetes operator for managing Keycloak clients declaratively**
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Go Report Card](https://goreportcard.com/badge/github.com/pewty/keycloak-client-operator)](https://goreportcard.com/report/github.com/pewty/keycloak-client-operator)
+[![Docker Pulls](https://img.shields.io/docker/pulls/ghcr.io/pewty/keycloak-client-operator)](https://github.com/pewty/keycloak-client-operator/pkgs/container/keycloak-client-operator)
+[![Release](https://img.shields.io/github/v/release/pewty/keycloak-client-operator)](https://github.com/pewty/keycloak-client-operator/releases/latest)
+[![CI](https://github.com/pewty/keycloak-client-operator/actions/workflows/ci.yaml/badge.svg)](https://github.com/pewty/keycloak-client-operator/actions/workflows/ci.yaml)
+
+[Features](#features) •
+[Installation](#installation) •
+[Usage](#usage) •
+[Configuration](#configuration) •
+[Contributing](#contributing)
+
+</div>
+
+---
+
+## 📋 Overview
+
+Keycloak Client Operator enables you to manage Keycloak clients (OAuth2/OIDC applications) as Kubernetes custom resources. Define your clients in YAML, apply them to your cluster, and let the operator handle the synchronization with Keycloak.
+
+**Why use this operator?**
+- 🎯 **GitOps-ready**: Manage Keycloak clients alongside your application deployments
+- 🔄 **Declarative**: Define desired state; the operator ensures it's maintained
+- 🚀 **Production-ready**: Multi-architecture support, comprehensive RBAC, leader election
+- 📦 **Easy deployment**: Available as Helm chart or kubectl manifests
+- 🔐 **Secure**: Non-root containers, read-only filesystem, distroless images
+
+## ✨ Features
+
+- ✅ Full Keycloak client lifecycle management (create, update, delete)
+- ✅ Support for client authentication (confidential, public, bearer-only)
+- ✅ Protocol mappers configuration
+- ✅ Authorization settings and policies
+- ✅ Multi-realm support
+- ✅ Leader election for high availability
+- ✅ Metrics endpoint for monitoring
+- ✅ Multi-architecture images (amd64, arm64)
+
+## 🚀 Installation
 
 ### Prerequisites
-- go version v1.24.0+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+- Kubernetes 1.19+
+- Keycloak 15+ (tested with Keycloak 21+)
+- Helm 3.0+ (for Helm installation)
 
-```sh
-make docker-build docker-push IMG=<some-registry>/keycloak-client-operator:tag
+### Option 1: Helm (Recommended)
+
+```bash
+# Add credentials secret
+kubectl create secret generic keycloak-credentials \
+  --from-literal=KEYCLOAK_URL=https://keycloak.example.com \
+  --from-literal=KEYCLOAK_USER=admin \
+  --from-literal=KEYCLOAK_PASSWORD=your-password
+
+# Install from OCI registry
+helm install keycloak-client-operator \
+  oci://ghcr.io/pewty/keycloak-client-operator-chart \
+  --version 0.1.0 \
+  --set keycloak.existingSecret=keycloak-credentials
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+**With custom values:**
 
-**Install the CRDs into the cluster:**
+```bash
+# Create custom values file
+cat <<EOF > values.yaml
+replicaCount: 2
 
-```sh
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 64Mi
+
+keycloak:
+  existingSecret: keycloak-credentials
+EOF
+
+# Install with custom values
+helm install keycloak-client-operator \
+  oci://ghcr.io/pewty/keycloak-client-operator-chart \
+  --version 0.1.0 \
+  -f values.yaml
+```
+
+### Option 2: kubectl
+
+```bash
+# Install the operator and CRDs
+kubectl apply -f https://github.com/pewty/keycloak-client-operator/releases/latest/download/install.yaml
+
+# Create Keycloak credentials
+kubectl create secret generic keycloak-credentials \
+  --namespace keycloak-client-operator-system \
+  --from-literal=KEYCLOAK_URL=https://keycloak.example.com \
+  --from-literal=KEYCLOAK_USER=admin \
+  --from-literal=KEYCLOAK_PASSWORD=your-password
+
+# Update the deployment to use the secret
+kubectl set env deployment/keycloak-client-operator-controller-manager \
+  --namespace keycloak-client-operator-system \
+  --from=secret/keycloak-credentials
+```
+
+### Option 3: From Source
+
+```bash
+git clone https://github.com/pewty/keycloak-client-operator.git
+cd keycloak-client-operator
+
+# Set environment variables
+export KEYCLOAK_URL=https://keycloak.example.com
+export KEYCLOAK_USER=admin
+export KEYCLOAK_PASSWORD=your-password
+
+# Install CRDs
 make install
+
+# Run locally (for development)
+make run
+
+# Or build and deploy to cluster
+make docker-build docker-push IMG=your-registry/keycloak-client-operator:tag
+make deploy IMG=your-registry/keycloak-client-operator:tag
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+## 📖 Usage
 
-```sh
-make deploy IMG=<some-registry>/keycloak-client-operator:tag
+### Basic Example
+
+Create a simple Keycloak client:
+
+```yaml
+apiVersion: keycloak.pewty.fr/v1
+kind: Client
+metadata:
+  name: my-app
+  namespace: default
+spec:
+  realm: master
+  client:
+    clientId: my-application
+    enabled: true
+    publicClient: false
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: true
+    serviceAccountsEnabled: true
+    redirectUris:
+      - "https://my-app.example.com/*"
+    webOrigins:
+      - "https://my-app.example.com"
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+Apply it:
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
+```bash
+kubectl apply -f client.yaml
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+### Public Client Example
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+For a frontend application:
 
-```sh
-kubectl delete -k config/samples/
+```yaml
+apiVersion: keycloak.pewty.fr/v1
+kind: Client
+metadata:
+  name: frontend-app
+spec:
+  realm: production
+  client:
+    clientId: frontend-spa
+    enabled: true
+    publicClient: true
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    redirectUris:
+      - "https://app.example.com/*"
+      - "http://localhost:3000/*"
+    webOrigins:
+      - "+"
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
+### Service Account Client
 
-```sh
-make uninstall
+For machine-to-machine communication:
+
+```yaml
+apiVersion: keycloak.pewty.fr/v1
+kind: Client
+metadata:
+  name: api-service
+spec:
+  realm: production
+  client:
+    clientId: api-backend
+    enabled: true
+    publicClient: false
+    serviceAccountsEnabled: true
+    standardFlowEnabled: false
+    directAccessGrantsEnabled: false
 ```
 
-**UnDeploy the controller from the cluster:**
+### Check Status
 
-```sh
-make undeploy
+```bash
+# View all clients
+kubectl get clients
+
+# Describe a specific client
+kubectl describe client my-app
+
+# Check operator logs
+kubectl logs -n keycloak-client-operator-system \
+  deployment/keycloak-client-operator-controller-manager
 ```
 
-## Project Distribution
+## ⚙️ Configuration
 
-Following the options to release and provide this solution to the users.
+### Helm Values
 
-### By providing a bundle with all YAML files
+Key configuration options:
 
-1. Build the installer for the image built and published in the registry:
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `replicaCount` | Number of operator replicas | `1` |
+| `image.repository` | Container image repository | `ghcr.io/pewty/keycloak-client-operator` |
+| `image.tag` | Container image tag | Chart appVersion |
+| `keycloak.url` | Keycloak server URL | `""` |
+| `keycloak.user` | Keycloak admin username | `""` |
+| `keycloak.password` | Keycloak admin password | `""` |
+| `keycloak.existingSecret` | Use existing secret for credentials | `""` |
+| `resources.limits.cpu` | CPU limit | `500m` |
+| `resources.limits.memory` | Memory limit | `128Mi` |
+| `resources.requests.cpu` | CPU request | `10m` |
+| `resources.requests.memory` | Memory request | `64Mi` |
 
-```sh
-make build-installer IMG=<some-registry>/keycloak-client-operator:tag
+See [chart/values.yaml](chart/values.yaml) for all available options.
+
+### Environment Variables
+
+The operator can be configured via environment variables:
+
+- `KEYCLOAK_URL`: Keycloak server URL (required)
+- `KEYCLOAK_USER`: Admin username (required)
+- `KEYCLOAK_PASSWORD`: Admin password (required)
+- `METRICS_BIND_ADDRESS`: Metrics server address (default: `:8443`)
+- `HEALTH_PROBE_BIND_ADDRESS`: Health probe address (default: `:8081`)
+- `LEADER_ELECT`: Enable leader election (default: `true`)
+
+## 🔍 Monitoring
+
+The operator exposes Prometheus metrics on port 8443:
+
+```yaml
+# ServiceMonitor example
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: keycloak-client-operator
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  endpoints:
+    - port: metrics
+      scheme: https
+      tlsConfig:
+        insecureSkipVerify: true
 ```
 
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
+## 🧪 Development
 
-2. Using the installer
+### Running Tests
 
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
+```bash
+# Run unit tests
+make test
 
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/keycloak-client-operator/<tag or branch>/dist/install.yaml
+# Run tests with coverage
+make test-coverage
+
+# Run linter
+make lint
 ```
 
-### By providing a Helm Chart
+### Building
 
-1. Build the chart using the optional helm plugin
+```bash
+# Build binary
+make build
 
-```sh
-kubebuilder edit --plugins=helm/v1-alpha
+# Build Docker image
+make docker-build IMG=your-registry/keycloak-client-operator:tag
+
+# Push Docker image
+make docker-push IMG=your-registry/keycloak-client-operator:tag
 ```
 
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
+### Local Development
 
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
+```bash
+# Install CRDs
+make install
 
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+# Run operator locally
+export KEYCLOAK_URL=https://keycloak.example.com
+export KEYCLOAK_USER=admin
+export KEYCLOAK_PASSWORD=password
+make run
+```
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
+## 🤝 Contributing
 
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## License
+### Workflow
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feat/amazing-feature`)
+3. Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/)
+   - `feat:` for new features
+   - `fix:` for bug fixes
+   - `docs:` for documentation changes
+   - `test:` for test additions/changes
+4. Push to the branch (`git push origin feat/amazing-feature`)
+5. Open a Pull Request
+
+### Testing PR Changes
+
+Comment `/snapshot docker` or `/snapshot helm` on your PR to build test artifacts.
+
+## 📜 License
 
 Copyright 2025.
 
@@ -132,4 +354,27 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+## 🙏 Acknowledgments
+
+Built with:
+- [Kubebuilder](https://kubebuilder.io/) - Kubernetes API extension framework
+- [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) - Kubernetes controller libraries
+- [Ginkgo](https://onsi.github.io/ginkgo/) & [Gomega](https://onsi.github.io/gomega/) - Testing framework
+
+## 📞 Support
+
+- 🐛 [Report a bug](https://github.com/pewty/keycloak-client-operator/issues/new?labels=bug)
+- 💡 [Request a feature](https://github.com/pewty/keycloak-client-operator/issues/new?labels=enhancement)
+- 💬 [Ask a question](https://github.com/pewty/keycloak-client-operator/discussions)
+
+---
+
+<div align="center">
+
+Made with ❤️ by the Pewty community
+
+⭐ Star us on GitHub — it motivates us a lot!
+
+</div>
 

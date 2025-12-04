@@ -1,0 +1,33 @@
+# Example values for development
+replicaCount: 1
+
+image:
+  repository: controller
+  pullPolicy: Always
+  tag: "latest"
+
+# Direct Keycloak credentials for development
+keycloak:
+  url: "http://keycloak.default.svc.cluster.local:8080"
+  user: "admin"
+  password: "admin"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+# Disable leader election for single replica
+leaderElection:
+  enabled: false
+
+# Debug logging
+args:
+  - --zap-log-level=debug
+
+# Metrics enabled
+metrics:
+  enabled: true
