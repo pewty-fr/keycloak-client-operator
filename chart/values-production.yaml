@@ -1,0 +1,71 @@
+# Example values for production deployment
+replicaCount: 2
+
+image:
+  repository: ghcr.io/pewty/keycloak-client-operator
+  pullPolicy: IfNotPresent
+  tag: "v0.1.0"
+
+# Use existing secret for Keycloak credentials
+keycloak:
+  existingSecret: keycloak-credentials
+  # Secret should contain:
+  # - KEYCLOAK_URL
+  # - KEYCLOAK_USER
+  # - KEYCLOAK_PASSWORD
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Enable leader election for HA
+leaderElection:
+  enabled: true
+
+# Node selector for dedicated nodes
+nodeSelector:
+  kubernetes.io/os: linux
+  workload: operators
+
+# Tolerations for tainted nodes
+tolerations:
+  - key: "workload"
+    operator: "Equal"
+    value: "operators"
+    effect: "NoSchedule"
+
+# Pod affinity for spreading replicas
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - keycloak-client-operator
+          topologyKey: kubernetes.io/hostname
+
+# Metrics configuration
+metrics:
+  enabled: true
+  service:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "8443"
+      prometheus.io/scheme: "https"
+
+# Additional environment variables
+env:
+  - name: ENVIRONMENT
+    value: "production"
+
+# Custom arguments
+args:
+  - --zap-log-level=info

@@ -1,0 +1,147 @@
+# Default values for keycloak-client-operator.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/pewty-fr/keycloak-client-operator
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Keycloak connection configuration
+# These should be provided as environment variables or secrets
+keycloak:
+  # URL of the Keycloak server
+  url: ""
+  # Username for Keycloak admin
+  user: ""
+  # Password for Keycloak admin
+  password: ""
+  # Use existing secret for credentials (optional)
+  existingSecret: ""
+  # Keys in the existing secret
+  secretKeys:
+    url: "KEYCLOAK_URL"
+    user: "KEYCLOAK_USER"
+    password: "KEYCLOAK_PASSWORD"
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations:
+  kubectl.kubernetes.io/default-container: manager
+
+podLabels:
+  control-plane: controller-manager
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - "ALL"
+
+# Service for metrics endpoint
+service:
+  type: ClusterIP
+  port: 8443
+  targetPort: 8443
+  name: https
+
+# Metrics service configuration
+metrics:
+  enabled: true
+  service:
+    annotations: {}
+    labels: {}
+
+# Health probe configuration
+health:
+  liveness:
+    path: /healthz
+    port: 8081
+    initialDelaySeconds: 15
+    periodSeconds: 20
+  readiness:
+    path: /readyz
+    port: 8081
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+# Leader election configuration
+leaderElection:
+  enabled: true
+
+# Additional volumes for the pod
+volumes: []
+# - name: example
+#   configMap:
+#     name: example-config
+
+# Additional volume mounts
+volumeMounts: []
+# - name: example
+#   mountPath: /etc/config
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# CRD installation
+crds:
+  # Whether to install CRDs
+  install: true
+  # Annotations to add to CRDs
+  annotations: {}
+
+# RBAC configuration
+rbac:
+  # Whether to create RBAC resources
+  create: true
+  # Annotations to add to RBAC resources
+  annotations: {}
+
+# Additional arguments for the manager
+args: []
+# - --zap-log-level=debug
+
+# Additional environment variables
+env: []
+# - name: CUSTOM_VAR
+#   value: "custom-value"
+
+# Additional environment variables from secrets/configmaps
+envFrom: []
+# - secretRef:
+#     name: my-secret
+# - configMapRef:
+#     name: my-configmap
