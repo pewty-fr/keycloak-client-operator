@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	keycloakv1 "pewty.fr/keycloak-client-operator/api/v1"
+	keycloakv1 "github.com/pewty-fr/keycloak-client-operator/api/v1"
 )
 
 const clientFinalizer = "keycloak.pewty.fr/finalizer"

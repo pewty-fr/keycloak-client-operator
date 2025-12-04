@@ -29,7 +29,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	keycloakv1 "pewty.fr/keycloak-client-operator/api/v1"
+	keycloakv1 "github.com/pewty-fr/keycloak-client-operator/api/v1"
 )
 
 var _ = Describe("Client Controller", func() {

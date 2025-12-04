@@ -32,7 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	keycloakv1 "pewty.fr/keycloak-client-operator/api/v1"
+	keycloakv1 "github.com/pewty-fr/keycloak-client-operator/api/v1"
 	// +kubebuilder:scaffold:imports
 )
 

@@ -4,10 +4,10 @@
 # Default base image (distroless static nonroot)
 defaultBaseImage: gcr.io/distroless/static:nonroot
 
-# Build flags
+# Build configuration
 builds:
   - id: manager
-    main: ./cmd/main.go
+    main: ./cmd
     env:
       - CGO_ENABLED=0
     flags:

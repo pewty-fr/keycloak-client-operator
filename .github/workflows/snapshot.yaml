@@ -69,14 +69,8 @@ jobs:
           ref: ${{ needs.check-comment.outputs.pr_ref }}
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install ko
-        run: go install github.com/google/ko@latest
+      - name: Set up ko
+        uses: ko-build/setup-ko@v0.7
 
       - name: Log in to GitHub Container Registry
         run: |
@@ -92,7 +86,7 @@ jobs:
           # Build and push with multiple tags
           ko build --bare --platform=linux/amd64,linux/arm64 \
             --tags=pr-${PR_NUM}-${SHA},pr-${PR_NUM}-latest \
-            ./cmd/main.go
+            ./cmd
 
       - name: Comment on PR with image details
         uses: actions/github-script@v7

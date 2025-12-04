@@ -35,8 +35,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	keycloakv1 "pewty.fr/keycloak-client-operator/api/v1"
-	"pewty.fr/keycloak-client-operator/internal/controller"
+	keycloakv1 "github.com/pewty-fr/keycloak-client-operator/api/v1"
+	"github.com/pewty-fr/keycloak-client-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 

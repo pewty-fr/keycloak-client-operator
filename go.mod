@@ -1,4 +1,4 @@
-module pewty.fr/keycloak-client-operator
+module github.com/pewty-fr/keycloak-client-operator
 
 go 1.24.6
 

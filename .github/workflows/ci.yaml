@@ -64,14 +64,14 @@ jobs:
       - name: Build binary
         run: make build
 
-      - name: Install ko
-        run: go install github.com/google/ko@latest
+      - name: Set up ko
+        uses: ko-build/setup-ko@v0.7
 
       - name: Build container image with ko
         env:
           KO_DOCKER_REPO: test
         run: |
-          ko build --local --bare ./cmd/main.go
+          ko build --local --bare ./cmd
 
   helm:
     name: Validate Helm Chart

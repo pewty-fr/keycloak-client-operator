@@ -121,12 +121,12 @@ PLATFORMS ?= linux/amd64,linux/arm64
 .PHONY: ko-build
 ko-build: manifests generate ## Build and push multi-arch container image using ko.
 	@command -v ko >/dev/null 2>&1 || { echo "ko is not installed. Install with: go install github.com/google/ko@latest"; exit 1; }
-	KO_DOCKER_REPO=${KO_DOCKER_REPO} ko build --bare --platform=${PLATFORMS} --tags=$(shell echo ${IMG} | cut -d: -f2) ./cmd/main.go
+	KO_DOCKER_REPO=${KO_DOCKER_REPO} ko build --bare --platform=${PLATFORMS} --tags=$(shell echo ${IMG} | cut -d: -f2) ./cmd
 
 .PHONY: ko-build-local
 ko-build-local: manifests generate ## Build local container image using ko (single platform).
 	@command -v ko >/dev/null 2>&1 || { echo "ko is not installed. Install with: go install github.com/google/ko@latest"; exit 1; }
-	KO_DOCKER_REPO=${KO_DOCKER_REPO} ko build --bare --local --tags=$(shell echo ${IMG} | cut -d: -f2) ./cmd/main.go
+	KO_DOCKER_REPO=${KO_DOCKER_REPO} ko build --bare --local --tags=$(shell echo ${IMG} | cut -d: -f2) ./cmd
 
 # Backward compatibility aliases
 .PHONY: docker-build

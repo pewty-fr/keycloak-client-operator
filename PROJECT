@@ -7,7 +7,7 @@ domain: pewty.fr
 layout:
 - go.kubebuilder.io/v4
 projectName: keycloak-client-operator
-repo: pewty.fr/keycloak-client-operator
+repo: github.com/pewty-fr/keycloak-client-operator
 resources:
 - api:
     crdVersion: v1
@@ -16,6 +16,6 @@ resources:
   domain: pewty.fr
   group: keycloak
   kind: Client
-  path: pewty.fr/keycloak-client-operator/api/v1
+  path: github.com/pewty-fr/keycloak-client-operator/api/v1
   version: v1
 version: "3"

@@ -30,7 +30,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"pewty.fr/keycloak-client-operator/test/utils"
+	"github.com/pewty-fr/keycloak-client-operator/test/utils"
 )
 
 // namespace where the project is deployed in
