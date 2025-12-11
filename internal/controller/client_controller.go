@@ -195,65 +195,65 @@ func (r *ClientReconciler) deleteClientInKeycloak(ctx context.Context, gc *goclo
 }
 
 // convertToGoCloak converts the CRD ClientRepresentation to gocloak.Client
-func (r *ClientReconciler) convertToGoCloak(client *keycloakv1.ClientRepresentation) gocloak.Client {
+func (r *ClientReconciler) convertToGoCloak(clientRep *keycloakv1.ClientRepresentation) gocloak.Client {
 	gc := gocloak.Client{
-		ID:                                 client.ID,
-		ClientID:                           client.ClientID,
-		Name:                               client.Name,
-		Description:                        client.Description,
-		RootURL:                            client.RootURL,
-		AdminURL:                           client.AdminURL,
-		BaseURL:                            client.BaseURL,
-		SurrogateAuthRequired:              client.SurrogateAuthRequired,
-		Enabled:                            client.Enabled,
-		ClientAuthenticatorType:            client.ClientAuthenticatorType,
-		Secret:                             client.Secret,
-		RegistrationAccessToken:            client.RegistrationAccessToken,
-		DefaultRoles:                       &client.DefaultRoles,
-		RedirectURIs:                       &client.RedirectUris,
-		WebOrigins:                         &client.WebOrigins,
-		NotBefore:                          client.NotBefore,
-		BearerOnly:                         client.BearerOnly,
-		ConsentRequired:                    client.ConsentRequired,
-		StandardFlowEnabled:                client.StandardFlowEnabled,
-		ImplicitFlowEnabled:                client.ImplicitFlowEnabled,
-		DirectAccessGrantsEnabled:          client.DirectAccessGrantsEnabled,
-		ServiceAccountsEnabled:             client.ServiceAccountsEnabled,
-		AuthorizationServicesEnabled:       client.AuthorizationServicesEnabled,
-		PublicClient:                       client.PublicClient,
-		FrontChannelLogout:                 client.FrontchannelLogout,
-		Protocol:                           client.Protocol,
-		Attributes:                         &client.Attributes,
-		AuthenticationFlowBindingOverrides: &client.AuthenticationFlowBindingOverrides,
-		FullScopeAllowed:                   client.FullScopeAllowed,
-		NodeReRegistrationTimeout:          client.NodeReRegistrationTimeout,
-		DefaultClientScopes:                &client.DefaultClientScopes,
-		OptionalClientScopes:               &client.OptionalClientScopes,
-		Origin:                             client.Origin,
+		ID:                                 clientRep.ID,
+		ClientID:                           clientRep.ClientID,
+		Name:                               clientRep.Name,
+		Description:                        clientRep.Description,
+		RootURL:                            clientRep.RootURL,
+		AdminURL:                           clientRep.AdminURL,
+		BaseURL:                            clientRep.BaseURL,
+		SurrogateAuthRequired:              clientRep.SurrogateAuthRequired,
+		Enabled:                            clientRep.Enabled,
+		ClientAuthenticatorType:            clientRep.ClientAuthenticatorType,
+		Secret:                             clientRep.Secret,
+		RegistrationAccessToken:            clientRep.RegistrationAccessToken,
+		DefaultRoles:                       &clientRep.DefaultRoles,
+		RedirectURIs:                       &clientRep.RedirectUris,
+		WebOrigins:                         &clientRep.WebOrigins,
+		NotBefore:                          clientRep.NotBefore,
+		BearerOnly:                         clientRep.BearerOnly,
+		ConsentRequired:                    clientRep.ConsentRequired,
+		StandardFlowEnabled:                clientRep.StandardFlowEnabled,
+		ImplicitFlowEnabled:                clientRep.ImplicitFlowEnabled,
+		DirectAccessGrantsEnabled:          clientRep.DirectAccessGrantsEnabled,
+		ServiceAccountsEnabled:             clientRep.ServiceAccountsEnabled,
+		AuthorizationServicesEnabled:       clientRep.AuthorizationServicesEnabled,
+		PublicClient:                       clientRep.PublicClient,
+		FrontChannelLogout:                 clientRep.FrontchannelLogout,
+		Protocol:                           clientRep.Protocol,
+		Attributes:                         &clientRep.Attributes,
+		AuthenticationFlowBindingOverrides: &clientRep.AuthenticationFlowBindingOverrides,
+		FullScopeAllowed:                   clientRep.FullScopeAllowed,
+		NodeReRegistrationTimeout:          clientRep.NodeReRegistrationTimeout,
+		DefaultClientScopes:                &clientRep.DefaultClientScopes,
+		OptionalClientScopes:               &clientRep.OptionalClientScopes,
+		Origin:                             clientRep.Origin,
 	}
 
 	// Convert RegisteredNodes from map[string]int32 to *map[string]int
-	if client.RegisteredNodes != nil {
+	if clientRep.RegisteredNodes != nil {
 		registeredNodes := make(map[string]int)
-		for k, v := range client.RegisteredNodes {
+		for k, v := range clientRep.RegisteredNodes {
 			registeredNodes[k] = int(v)
 		}
 		gc.RegisteredNodes = &registeredNodes
 	}
 
 	// Convert Access from map[string]bool to *map[string]interface{}
-	if client.Access != nil {
+	if clientRep.Access != nil {
 		access := make(map[string]interface{})
-		for k, v := range client.Access {
+		for k, v := range clientRep.Access {
 			access[k] = v
 		}
 		gc.Access = &access
 	}
 
 	// Convert protocol mappers
-	if len(client.ProtocolMappers) > 0 {
-		protocolMappers := make([]gocloak.ProtocolMapperRepresentation, len(client.ProtocolMappers))
-		for i, pm := range client.ProtocolMappers {
+	if len(clientRep.ProtocolMappers) > 0 {
+		protocolMappers := make([]gocloak.ProtocolMapperRepresentation, len(clientRep.ProtocolMappers))
+		for i, pm := range clientRep.ProtocolMappers {
 			protocolMappers[i] = gocloak.ProtocolMapperRepresentation{
 				ID:             pm.ID,
 				Name:           pm.Name,
