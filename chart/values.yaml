@@ -130,9 +130,12 @@ rbac:
   # Annotations to add to RBAC resources
   annotations: {}
 
+# Log level for the operator (debug, info, warn, error, fatal, panic)
+logLevel: info
+
 # Additional arguments for the manager
 args: []
-# - --zap-log-level=debug
+# - --log-level=debug
 
 # Additional environment variables
 env: []
