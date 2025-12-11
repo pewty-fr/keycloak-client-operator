@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"os"
 
 	gocloak "github.com/Nerzal/gocloak/v13"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -38,7 +37,11 @@ const clientFinalizer = "keycloak.pewty.fr/finalizer"
 // ClientReconciler reconciles a Client object
 type ClientReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme         *runtime.Scheme
+	KeycloakClient *gocloak.GoCloak
+	KeycloakURL    string
+	KeycloakUser   string
+	KeycloakPass   string
 }
 
 // +kubebuilder:rbac:groups=keycloak.pewty.fr,resources=clients,verbs=get;list;watch;create;update;patch;delete
@@ -81,9 +84,8 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 
-	// Initialize Keycloak client
-	gc := gocloak.NewClient(os.Getenv("KEYCLOAK_URL"))
-	token, err := gc.LoginAdmin(ctx, os.Getenv("KEYCLOAK_USER"), os.Getenv("KEYCLOAK_PASSWORD"), *kcClient.Spec.Realm)
+	// Authenticate with Keycloak
+	token, err := r.KeycloakClient.LoginAdmin(ctx, r.KeycloakUser, r.KeycloakPass, "master")
 	if err != nil {
 		logger.Error(err, "Failed to authenticate with Keycloak")
 		r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "AuthenticationFailed", fmt.Sprintf("Failed to authenticate: %v", err))
@@ -94,7 +96,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if !kcClient.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&kcClient, clientFinalizer) {
 			// Resource is being deleted, perform cleanup
-			if err := r.deleteClientInKeycloak(ctx, gc, token.AccessToken, &kcClient); err != nil {
+			if err := r.deleteClientInKeycloak(ctx, r.KeycloakClient, token.AccessToken, &kcClient); err != nil {
 				logger.Error(err, "Failed to delete client in Keycloak")
 				r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "DeletionFailed", fmt.Sprintf("Failed to delete: %v", err))
 				return ctrl.Result{}, err
@@ -121,7 +123,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// 4. Check if client exists in Keycloak
-	clients, err := gc.GetClients(ctx, token.AccessToken, *kcClient.Spec.Realm, gocloak.GetClientsParams{
+	clients, err := r.KeycloakClient.GetClients(ctx, token.AccessToken, *kcClient.Spec.Realm, gocloak.GetClientsParams{
 		ClientID: kcClient.Spec.Client.ClientID,
 	})
 	if err != nil {
@@ -135,7 +137,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		logger.Info("Creating client in Keycloak", "clientID", *kcClient.Spec.Client.ClientID)
 
 		newClient := r.convertToGoCloak(&kcClient.Spec.Client)
-		clientID, err := gc.CreateClient(ctx, token.AccessToken, *kcClient.Spec.Realm, newClient)
+		clientID, err := r.KeycloakClient.CreateClient(ctx, token.AccessToken, *kcClient.Spec.Realm, newClient)
 		if err != nil {
 			logger.Error(err, "Failed to create client in Keycloak")
 			r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "CreationFailed", fmt.Sprintf("Failed to create: %v", err))
@@ -154,7 +156,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		// Preserve the internal ID from the existing client
 		updatedClient.ID = existingClient.ID
 
-		err := gc.UpdateClient(ctx, token.AccessToken, *kcClient.Spec.Realm, updatedClient)
+		err := r.KeycloakClient.UpdateClient(ctx, token.AccessToken, *kcClient.Spec.Realm, updatedClient)
 		if err != nil {
 			logger.Error(err, "Failed to update client in Keycloak")
 			r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "UpdateFailed", fmt.Sprintf("Failed to update: %v", err))

@@ -25,6 +25,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	gocloak "github.com/Nerzal/gocloak/v13"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -178,9 +179,41 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize Keycloak client
+	keycloakURL := os.Getenv("KEYCLOAK_URL")
+	keycloakUser := os.Getenv("KEYCLOAK_USER")
+	keycloakPass := os.Getenv("KEYCLOAK_PASSWORD")
+
+	if keycloakURL == "" || keycloakUser == "" || keycloakPass == "" {
+		setupLog.Error(nil, "Keycloak configuration is required",
+			"KEYCLOAK_URL", keycloakURL != "",
+			"KEYCLOAK_USER", keycloakUser != "",
+			"KEYCLOAK_PASSWORD", keycloakPass != "")
+		os.Exit(1)
+	}
+
+	keycloakClient := gocloak.NewClient(keycloakURL)
+	setupLog.Info("Initialized Keycloak client", "url", keycloakURL)
+
+	// Validate Keycloak credentials by attempting to login
+	setupLog.Info("Validating Keycloak credentials...")
+	ctx := ctrl.SetupSignalHandler()
+	token, err := keycloakClient.LoginClient(ctx, keycloakUser, keycloakPass, "master")
+	if err != nil {
+		setupLog.Error(err, "Failed to authenticate with Keycloak - invalid credentials or unreachable server",
+			"url", keycloakURL,
+			"user", keycloakUser)
+		os.Exit(1)
+	}
+	setupLog.Info("Successfully authenticated with Keycloak", "realm", "master", "tokenType", token.TokenType)
+
 	if err := (&controller.ClientReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		KeycloakClient: keycloakClient,
+		KeycloakURL:    keycloakURL,
+		KeycloakUser:   keycloakUser,
+		KeycloakPass:   keycloakPass,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Client")
 		os.Exit(1)
@@ -197,7 +230,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
