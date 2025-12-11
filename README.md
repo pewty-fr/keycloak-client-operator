@@ -57,7 +57,8 @@ Keycloak Client Operator enables you to manage Keycloak clients (OAuth2/OIDC app
 kubectl create secret generic keycloak-credentials \
   --from-literal=KEYCLOAK_URL=https://keycloak.example.com \
   --from-literal=KEYCLOAK_USER=admin \
-  --from-literal=KEYCLOAK_PASSWORD=your-password
+  --from-literal=KEYCLOAK_PASSWORD=your-password \
+  --from-literal=KEYCLOAK_REALM=master
 
 # Install from OCI registry
 helm install keycloak-client-operator \
@@ -103,7 +104,8 @@ kubectl create secret generic keycloak-credentials \
   --namespace keycloak-client-operator-system \
   --from-literal=KEYCLOAK_URL=https://keycloak.example.com \
   --from-literal=KEYCLOAK_USER=admin \
-  --from-literal=KEYCLOAK_PASSWORD=your-password
+  --from-literal=KEYCLOAK_PASSWORD=your-password \
+  --from-literal=KEYCLOAK_REALM=master
 
 # Update the deployment to use the secret
 kubectl set env deployment/keycloak-client-operator-controller-manager \
@@ -121,6 +123,7 @@ cd keycloak-client-operator
 export KEYCLOAK_URL=https://keycloak.example.com
 export KEYCLOAK_USER=admin
 export KEYCLOAK_PASSWORD=your-password
+export KEYCLOAK_REALM=master
 
 # Install CRDs
 make install
@@ -254,6 +257,7 @@ The operator can be configured via environment variables:
 - `KEYCLOAK_URL`: Keycloak server URL (required)
 - `KEYCLOAK_USER`: Admin username (required)
 - `KEYCLOAK_PASSWORD`: Admin password (required)
+- `KEYCLOAK_REALM`: Keycloak realm for operator authentication (default: `master`, client realms are specified in CRD spec)
 - `METRICS_BIND_ADDRESS`: Metrics server address (default: `:8443`)
 - `HEALTH_PROBE_BIND_ADDRESS`: Health probe address (default: `:8081`)
 - `LEADER_ELECT`: Enable leader election (default: `true`)
@@ -318,6 +322,7 @@ make install
 export KEYCLOAK_URL=https://keycloak.example.com
 export KEYCLOAK_USER=admin
 export KEYCLOAK_PASSWORD=password
+export KEYCLOAK_REALM=master
 make run
 ```
 

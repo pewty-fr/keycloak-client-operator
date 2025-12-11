@@ -42,6 +42,7 @@ type ClientReconciler struct {
 	KeycloakURL    string
 	KeycloakUser   string
 	KeycloakPass   string
+	KeycloakRealm  string
 }
 
 // +kubebuilder:rbac:groups=keycloak.pewty.fr,resources=clients,verbs=get;list;watch;create;update;patch;delete
@@ -85,7 +86,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// Authenticate with Keycloak
-	token, err := r.KeycloakClient.LoginAdmin(ctx, r.KeycloakUser, r.KeycloakPass, "master")
+	token, err := r.KeycloakClient.LoginClient(ctx, r.KeycloakUser, r.KeycloakPass, r.KeycloakRealm)
 	if err != nil {
 		logger.Error(err, "Failed to authenticate with Keycloak")
 		r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "AuthenticationFailed", fmt.Sprintf("Failed to authenticate: %v", err))

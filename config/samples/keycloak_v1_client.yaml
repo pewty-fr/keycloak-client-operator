@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: client-sample
 spec:
-  realm: "energypool"
+  realm: "test"
   client:
     clientId: "my-client"
     name: "My Client"

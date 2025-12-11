@@ -23,6 +23,8 @@ keycloak:
   user: ""
   # Password for Keycloak admin
   password: ""
+  # Realm to use for operator authentication (default: master)
+  realm: "master"
   # Use existing secret for credentials (optional)
   existingSecret: ""
   # Keys in the existing secret
@@ -30,6 +32,7 @@ keycloak:
     url: "KEYCLOAK_URL"
     user: "KEYCLOAK_USER"
     password: "KEYCLOAK_PASSWORD"
+    realm: "KEYCLOAK_REALM"
 
 serviceAccount:
   # Specifies whether a service account should be created
