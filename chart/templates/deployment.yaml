@@ -36,13 +36,12 @@ spec:
           {{- toYaml .Values.securityContext | nindent 12 }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
-        command:
-        - /manager
         args:
         {{- if .Values.leaderElection.enabled }}
         - --leader-elect
         {{- end }}
         - --health-probe-bind-address=:8081
+        - --log-level={{ .Values.logLevel }}
         {{- with .Values.args }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
