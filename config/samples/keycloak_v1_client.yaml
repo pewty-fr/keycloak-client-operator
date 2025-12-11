@@ -6,4 +6,16 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: client-sample
 spec:
-  # TODO(user): Add fields here
+  realm: "energypool"
+  client:
+    clientId: "my-client"
+    name: "My Client"
+    enabled: true
+    protocol: "openid-connect"
+    publicClient: false
+    directAccessGrantsEnabled: true
+    redirectUris:
+      - "https://myapp.example.com/*"
+    webOrigins:
+      - "*"
+    secret: "my-client-secret"

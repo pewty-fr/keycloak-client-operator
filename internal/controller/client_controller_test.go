@@ -32,19 +32,27 @@ import (
 	keycloakv1 "github.com/pewty-fr/keycloak-client-operator/api/v1"
 )
 
+const (
+	testClientID = "test-client-id"
+	protocolOIDC = "openid-connect"
+	protocolSAML = "saml"
+	realmMaster  = "master"
+	testRealm    = "test-realm"
+)
+
 var _ = Describe("Client Controller", func() {
 	BeforeEach(func() {
 		// Set environment variables for Keycloak connection
-		os.Setenv("KEYCLOAK_URL", "http://localhost:8080")
-		os.Setenv("KEYCLOAK_USER", "admin")
-		os.Setenv("KEYCLOAK_PASSWORD", "admin")
+		Expect(os.Setenv("KEYCLOAK_URL", "http://localhost:8080")).To(Succeed())
+		Expect(os.Setenv("KEYCLOAK_USER", "admin")).To(Succeed())
+		Expect(os.Setenv("KEYCLOAK_PASSWORD", "admin")).To(Succeed())
 	})
 
 	Context("When converting ClientRepresentation to gocloak.Client", func() {
 		It("Should correctly map all basic fields", func() {
 			reconciler := &ClientReconciler{}
 
-			clientID := "test-client-id"
+			clientID := testClientID
 			clientName := "Test Client"
 			clientSecret := "test-secret"
 			enabled := true
@@ -102,9 +110,9 @@ var _ = Describe("Client Controller", func() {
 		It("Should handle protocol mappers correctly", func() {
 			reconciler := &ClientReconciler{}
 
-			clientID := "test-client-id"
+			clientID := testClientID
 			mapperName := "email"
-			protocol := "openid-connect"
+			protocol := protocolOIDC
 			protocolMapper := "oidc-usermodel-property-mapper"
 
 			clientRep := &keycloakv1.ClientRepresentation{
@@ -139,7 +147,7 @@ var _ = Describe("Client Controller", func() {
 		It("Should handle RegisteredNodes type conversion", func() {
 			reconciler := &ClientReconciler{}
 
-			clientID := "test-client-id"
+			clientID := testClientID
 			clientRep := &keycloakv1.ClientRepresentation{
 				ClientID: &clientID,
 				RegisteredNodes: map[string]int32{
@@ -159,7 +167,7 @@ var _ = Describe("Client Controller", func() {
 		It("Should handle Access map type conversion", func() {
 			reconciler := &ClientReconciler{}
 
-			clientID := "test-client-id"
+			clientID := testClientID
 			clientRep := &keycloakv1.ClientRepresentation{
 				ClientID: &clientID,
 				Access: map[string]bool{
@@ -179,7 +187,7 @@ var _ = Describe("Client Controller", func() {
 		It("Should handle nil values gracefully", func() {
 			reconciler := &ClientReconciler{}
 
-			clientID := "test-client-id"
+			clientID := testClientID
 			clientRep := &keycloakv1.ClientRepresentation{
 				ClientID: &clientID,
 			}
@@ -209,15 +217,15 @@ var _ = Describe("Client Controller", func() {
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			if err == nil {
 				By("Cleanup the specific resource instance Client")
-				k8sClient.Delete(ctx, resource)
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 			}
 		})
 
 		It("Should create a valid Client resource with required fields", func() {
 			By("Creating the custom resource with required fields")
 
-			realm := "master"
-			clientID := "test-client-id"
+			realm := realmMaster
+			clientID := testClientID
 
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
@@ -293,7 +301,7 @@ var _ = Describe("Client Controller", func() {
 
 			By("Verifying no error is returned for missing resource")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeFalse())
+			Expect(result.RequeueAfter).To(BeZero())
 		})
 	})
 
@@ -314,9 +322,9 @@ var _ = Describe("Client Controller", func() {
 				// Remove finalizer if present
 				if controllerutil.ContainsFinalizer(resource, clientFinalizer) {
 					controllerutil.RemoveFinalizer(resource, clientFinalizer)
-					k8sClient.Update(ctx, resource)
+					Expect(k8sClient.Update(ctx, resource)).To(Succeed())
 				}
-				k8sClient.Delete(ctx, resource)
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 			}
 		})
 
@@ -330,7 +338,7 @@ var _ = Describe("Client Controller", func() {
 
 			clientID := "validation-client"
 			// Create resource with realm (passes CRD validation)
-			realm := "master"
+			realm := realmMaster
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      resourceName,
@@ -376,7 +384,7 @@ var _ = Describe("Client Controller", func() {
 			}
 
 			clientID := "validation-client-2"
-			realm := "master"
+			realm := realmMaster
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      resourceName + "-2",
@@ -421,7 +429,7 @@ var _ = Describe("Client Controller", func() {
 			// Cleanup
 			resource2 := &keycloakv1.Client{}
 			if k8sClient.Get(ctx, typeNamespacedName2, resource2) == nil {
-				k8sClient.Delete(ctx, resource2)
+				Expect(k8sClient.Delete(ctx, resource2)).To(Succeed())
 			}
 		})
 	})
@@ -440,13 +448,13 @@ var _ = Describe("Client Controller", func() {
 			resource := &keycloakv1.Client{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			if err == nil {
-				k8sClient.Delete(ctx, resource)
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 			}
 		})
 
 		It("Should update status conditions", func() {
 			By("Creating a Client resource")
-			realm := "test-realm"
+			realm := testRealm
 			clientID := "status-test-client"
 
 			resource := &keycloakv1.Client{
@@ -496,7 +504,7 @@ var _ = Describe("Client Controller", func() {
 
 		It("Should update existing status condition", func() {
 			By("Creating a Client resource with initial status")
-			realm := "test-realm"
+			realm := testRealm
 			clientID := "status-update-client"
 
 			resource := &keycloakv1.Client{
@@ -558,7 +566,7 @@ var _ = Describe("Client Controller", func() {
 			}).Should(BeTrue())
 
 			// Cleanup
-			k8sClient.Delete(ctx, resource)
+			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
 	})
 
@@ -579,15 +587,15 @@ var _ = Describe("Client Controller", func() {
 				// Remove finalizer if present to allow deletion
 				if controllerutil.ContainsFinalizer(resource, clientFinalizer) {
 					controllerutil.RemoveFinalizer(resource, clientFinalizer)
-					k8sClient.Update(ctx, resource)
+					Expect(k8sClient.Update(ctx, resource)).To(Succeed())
 				}
-				k8sClient.Delete(ctx, resource)
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 			}
 		})
 
 		It("Should add finalizer to new resource", func() {
 			By("Creating a Client resource")
-			realm := "test-realm"
+			realm := testRealm
 			clientID := "finalizer-test-client"
 
 			resource := &keycloakv1.Client{
@@ -629,7 +637,7 @@ var _ = Describe("Client Controller", func() {
 
 		It("Should handle resource with finalizer being deleted", func() {
 			By("Creating a Client resource with finalizer")
-			realm := "test-realm"
+			realm := testRealm
 			clientID := "deletion-test-client"
 
 			resource := &keycloakv1.Client{
@@ -691,7 +699,7 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "saml-client"
-			protocol := "saml"
+			protocol := protocolSAML
 
 			clientRep := &keycloakv1.ClientRepresentation{
 				ClientID: &clientID,
@@ -722,7 +730,7 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "saml-client-with-mappers"
-			protocol := "saml"
+			protocol := protocolSAML
 			mapperName := "role-list"
 			mapperProtocol := "saml"
 			protocolMapper := "saml-role-list-mapper"
@@ -760,7 +768,7 @@ var _ = Describe("Client Controller", func() {
 		It("Should handle empty arrays correctly", func() {
 			reconciler := &ClientReconciler{}
 
-			clientID := "test-client-id"
+			clientID := testClientID
 			clientRep := &keycloakv1.ClientRepresentation{
 				ClientID:        &clientID,
 				RedirectUris:    []string{},
@@ -783,13 +791,13 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			id := "uuid-123"
-			clientID := "test-client"
+			clientID := "test-client" //nolint:goconst // Local variable in test context
 			name := "Test Client"
 			description := "A test client"
 			rootURL := "https://example.com"
 			adminURL := "https://example.com/admin"
 			baseURL := "https://example.com/base"
-			protocol := "openid-connect"
+			protocol := protocolOIDC
 			secret := "super-secret"
 			authType := "client-secret"
 			regToken := "registration-token"
@@ -944,7 +952,7 @@ var _ = Describe("Client Controller", func() {
 			clientID := "test-client"
 			mapperID := "mapper-123"
 			mapperName := "complex-mapper"
-			protocol := "openid-connect"
+			protocol := protocolOIDC
 			protocolMapper := "oidc-usermodel-attribute-mapper"
 
 			clientRep := &keycloakv1.ClientRepresentation{

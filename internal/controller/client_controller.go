@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"os"
 
 	gocloak "github.com/Nerzal/gocloak/v13"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -38,7 +37,11 @@ const clientFinalizer = "keycloak.pewty.fr/finalizer"
 // ClientReconciler reconciles a Client object
 type ClientReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme         *runtime.Scheme
+	KeycloakClient *gocloak.GoCloak
+	KeycloakURL    string
+	KeycloakUser   string
+	KeycloakPass   string
 }
 
 // +kubebuilder:rbac:groups=keycloak.pewty.fr,resources=clients,verbs=get;list;watch;create;update;patch;delete
@@ -81,9 +84,8 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 
-	// Initialize Keycloak client
-	gc := gocloak.NewClient(os.Getenv("KEYCLOAK_URL"))
-	token, err := gc.LoginAdmin(ctx, os.Getenv("KEYCLOAK_USER"), os.Getenv("KEYCLOAK_PASSWORD"), *kcClient.Spec.Realm)
+	// Authenticate with Keycloak
+	token, err := r.KeycloakClient.LoginAdmin(ctx, r.KeycloakUser, r.KeycloakPass, "master")
 	if err != nil {
 		logger.Error(err, "Failed to authenticate with Keycloak")
 		r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "AuthenticationFailed", fmt.Sprintf("Failed to authenticate: %v", err))
@@ -94,7 +96,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if !kcClient.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&kcClient, clientFinalizer) {
 			// Resource is being deleted, perform cleanup
-			if err := r.deleteClientInKeycloak(ctx, gc, token.AccessToken, &kcClient); err != nil {
+			if err := r.deleteClientInKeycloak(ctx, r.KeycloakClient, token.AccessToken, &kcClient); err != nil {
 				logger.Error(err, "Failed to delete client in Keycloak")
 				r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "DeletionFailed", fmt.Sprintf("Failed to delete: %v", err))
 				return ctrl.Result{}, err
@@ -121,7 +123,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// 4. Check if client exists in Keycloak
-	clients, err := gc.GetClients(ctx, token.AccessToken, *kcClient.Spec.Realm, gocloak.GetClientsParams{
+	clients, err := r.KeycloakClient.GetClients(ctx, token.AccessToken, *kcClient.Spec.Realm, gocloak.GetClientsParams{
 		ClientID: kcClient.Spec.Client.ClientID,
 	})
 	if err != nil {
@@ -135,7 +137,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		logger.Info("Creating client in Keycloak", "clientID", *kcClient.Spec.Client.ClientID)
 
 		newClient := r.convertToGoCloak(&kcClient.Spec.Client)
-		clientID, err := gc.CreateClient(ctx, token.AccessToken, *kcClient.Spec.Realm, newClient)
+		clientID, err := r.KeycloakClient.CreateClient(ctx, token.AccessToken, *kcClient.Spec.Realm, newClient)
 		if err != nil {
 			logger.Error(err, "Failed to create client in Keycloak")
 			r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "CreationFailed", fmt.Sprintf("Failed to create: %v", err))
@@ -154,7 +156,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		// Preserve the internal ID from the existing client
 		updatedClient.ID = existingClient.ID
 
-		err := gc.UpdateClient(ctx, token.AccessToken, *kcClient.Spec.Realm, updatedClient)
+		err := r.KeycloakClient.UpdateClient(ctx, token.AccessToken, *kcClient.Spec.Realm, updatedClient)
 		if err != nil {
 			logger.Error(err, "Failed to update client in Keycloak")
 			r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "UpdateFailed", fmt.Sprintf("Failed to update: %v", err))
@@ -193,65 +195,65 @@ func (r *ClientReconciler) deleteClientInKeycloak(ctx context.Context, gc *goclo
 }
 
 // convertToGoCloak converts the CRD ClientRepresentation to gocloak.Client
-func (r *ClientReconciler) convertToGoCloak(client *keycloakv1.ClientRepresentation) gocloak.Client {
+func (r *ClientReconciler) convertToGoCloak(clientRep *keycloakv1.ClientRepresentation) gocloak.Client {
 	gc := gocloak.Client{
-		ID:                                 client.ID,
-		ClientID:                           client.ClientID,
-		Name:                               client.Name,
-		Description:                        client.Description,
-		RootURL:                            client.RootURL,
-		AdminURL:                           client.AdminURL,
-		BaseURL:                            client.BaseURL,
-		SurrogateAuthRequired:              client.SurrogateAuthRequired,
-		Enabled:                            client.Enabled,
-		ClientAuthenticatorType:            client.ClientAuthenticatorType,
-		Secret:                             client.Secret,
-		RegistrationAccessToken:            client.RegistrationAccessToken,
-		DefaultRoles:                       &client.DefaultRoles,
-		RedirectURIs:                       &client.RedirectUris,
-		WebOrigins:                         &client.WebOrigins,
-		NotBefore:                          client.NotBefore,
-		BearerOnly:                         client.BearerOnly,
-		ConsentRequired:                    client.ConsentRequired,
-		StandardFlowEnabled:                client.StandardFlowEnabled,
-		ImplicitFlowEnabled:                client.ImplicitFlowEnabled,
-		DirectAccessGrantsEnabled:          client.DirectAccessGrantsEnabled,
-		ServiceAccountsEnabled:             client.ServiceAccountsEnabled,
-		AuthorizationServicesEnabled:       client.AuthorizationServicesEnabled,
-		PublicClient:                       client.PublicClient,
-		FrontChannelLogout:                 client.FrontchannelLogout,
-		Protocol:                           client.Protocol,
-		Attributes:                         &client.Attributes,
-		AuthenticationFlowBindingOverrides: &client.AuthenticationFlowBindingOverrides,
-		FullScopeAllowed:                   client.FullScopeAllowed,
-		NodeReRegistrationTimeout:          client.NodeReRegistrationTimeout,
-		DefaultClientScopes:                &client.DefaultClientScopes,
-		OptionalClientScopes:               &client.OptionalClientScopes,
-		Origin:                             client.Origin,
+		ID:                                 clientRep.ID,
+		ClientID:                           clientRep.ClientID,
+		Name:                               clientRep.Name,
+		Description:                        clientRep.Description,
+		RootURL:                            clientRep.RootURL,
+		AdminURL:                           clientRep.AdminURL,
+		BaseURL:                            clientRep.BaseURL,
+		SurrogateAuthRequired:              clientRep.SurrogateAuthRequired,
+		Enabled:                            clientRep.Enabled,
+		ClientAuthenticatorType:            clientRep.ClientAuthenticatorType,
+		Secret:                             clientRep.Secret,
+		RegistrationAccessToken:            clientRep.RegistrationAccessToken,
+		DefaultRoles:                       &clientRep.DefaultRoles,
+		RedirectURIs:                       &clientRep.RedirectUris,
+		WebOrigins:                         &clientRep.WebOrigins,
+		NotBefore:                          clientRep.NotBefore,
+		BearerOnly:                         clientRep.BearerOnly,
+		ConsentRequired:                    clientRep.ConsentRequired,
+		StandardFlowEnabled:                clientRep.StandardFlowEnabled,
+		ImplicitFlowEnabled:                clientRep.ImplicitFlowEnabled,
+		DirectAccessGrantsEnabled:          clientRep.DirectAccessGrantsEnabled,
+		ServiceAccountsEnabled:             clientRep.ServiceAccountsEnabled,
+		AuthorizationServicesEnabled:       clientRep.AuthorizationServicesEnabled,
+		PublicClient:                       clientRep.PublicClient,
+		FrontChannelLogout:                 clientRep.FrontchannelLogout,
+		Protocol:                           clientRep.Protocol,
+		Attributes:                         &clientRep.Attributes,
+		AuthenticationFlowBindingOverrides: &clientRep.AuthenticationFlowBindingOverrides,
+		FullScopeAllowed:                   clientRep.FullScopeAllowed,
+		NodeReRegistrationTimeout:          clientRep.NodeReRegistrationTimeout,
+		DefaultClientScopes:                &clientRep.DefaultClientScopes,
+		OptionalClientScopes:               &clientRep.OptionalClientScopes,
+		Origin:                             clientRep.Origin,
 	}
 
 	// Convert RegisteredNodes from map[string]int32 to *map[string]int
-	if client.RegisteredNodes != nil {
+	if clientRep.RegisteredNodes != nil {
 		registeredNodes := make(map[string]int)
-		for k, v := range client.RegisteredNodes {
+		for k, v := range clientRep.RegisteredNodes {
 			registeredNodes[k] = int(v)
 		}
 		gc.RegisteredNodes = &registeredNodes
 	}
 
 	// Convert Access from map[string]bool to *map[string]interface{}
-	if client.Access != nil {
+	if clientRep.Access != nil {
 		access := make(map[string]interface{})
-		for k, v := range client.Access {
+		for k, v := range clientRep.Access {
 			access[k] = v
 		}
 		gc.Access = &access
 	}
 
 	// Convert protocol mappers
-	if len(client.ProtocolMappers) > 0 {
-		protocolMappers := make([]gocloak.ProtocolMapperRepresentation, len(client.ProtocolMappers))
-		for i, pm := range client.ProtocolMappers {
+	if len(clientRep.ProtocolMappers) > 0 {
+		protocolMappers := make([]gocloak.ProtocolMapperRepresentation, len(clientRep.ProtocolMappers))
+		for i, pm := range clientRep.ProtocolMappers {
 			protocolMappers[i] = gocloak.ProtocolMapperRepresentation{
 				ID:             pm.ID,
 				Name:           pm.Name,
