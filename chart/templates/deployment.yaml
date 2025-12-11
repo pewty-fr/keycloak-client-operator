@@ -62,6 +62,11 @@ spec:
             secretKeyRef:
               name: {{ .Values.keycloak.existingSecret }}
               key: {{ .Values.keycloak.secretKeys.password }}
+        - name: KEYCLOAK_REALM
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.keycloak.existingSecret }}
+              key: {{ .Values.keycloak.secretKeys.realm }}
         {{- else if .Values.keycloak.url }}
         - name: KEYCLOAK_URL
           value: {{ .Values.keycloak.url | quote }}
@@ -69,6 +74,8 @@ spec:
           value: {{ .Values.keycloak.user | quote }}
         - name: KEYCLOAK_PASSWORD
           value: {{ .Values.keycloak.password | quote }}
+        - name: KEYCLOAK_REALM
+          value: {{ .Values.keycloak.realm | quote }}
         {{- end }}
         {{- with .Values.env }}
         {{- toYaml . | nindent 8 }}

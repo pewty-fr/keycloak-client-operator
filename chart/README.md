@@ -16,7 +16,8 @@ To install the chart with the release name `my-release`:
 helm install my-release ./chart \
   --set keycloak.url=https://keycloak.example.com \
   --set keycloak.user=admin \
-  --set keycloak.password=admin
+  --set keycloak.password=admin \
+  --set keycloak.realm=master
 ```
 
 Or using an existing secret:
@@ -25,7 +26,8 @@ Or using an existing secret:
 kubectl create secret generic keycloak-credentials \
   --from-literal=KEYCLOAK_URL=https://keycloak.example.com \
   --from-literal=KEYCLOAK_USER=admin \
-  --from-literal=KEYCLOAK_PASSWORD=admin
+  --from-literal=KEYCLOAK_PASSWORD=admin \
+  --from-literal=KEYCLOAK_REALM=master
 
 helm install my-release ./chart \
   --set keycloak.existingSecret=keycloak-credentials
@@ -52,6 +54,7 @@ The following table lists the configurable parameters of the Keycloak Client Ope
 | `keycloak.url` | Keycloak server URL | `""` |
 | `keycloak.user` | Keycloak admin username | `""` |
 | `keycloak.password` | Keycloak admin password | `""` |
+| `keycloak.realm` | Keycloak realm for operator authentication (client realms are specified in CRD spec) | `"master"` |
 | `keycloak.existingSecret` | Name of existing secret for credentials | `""` |
 | `serviceAccount.create` | Create service account | `true` |
 | `serviceAccount.name` | Service account name | `""` |
