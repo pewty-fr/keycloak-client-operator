@@ -59,9 +59,7 @@ var _ = Describe("Client Controller", func() {
 			publicClient := false
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID:                  &clientID,
 				Name:                      &clientName,
-				Secret:                    &clientSecret,
 				Enabled:                   &enabled,
 				PublicClient:              &publicClient,
 				StandardFlowEnabled:       boolPtr(true),
@@ -78,7 +76,7 @@ var _ = Describe("Client Controller", func() {
 				},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying basic fields")
 			Expect(goCloak.ClientID).To(Equal(&clientID))
@@ -111,12 +109,12 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := testClientID
+			clientSecret := ""
 			mapperName := "email"
 			protocol := protocolOIDC
 			protocolMapper := "oidc-usermodel-property-mapper"
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID: &clientID,
 				ProtocolMappers: []keycloakv1.ProtocolMapperRepresentation{
 					{
 						Name:           &mapperName,
@@ -130,7 +128,7 @@ var _ = Describe("Client Controller", func() {
 				},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying protocol mappers exist")
 			Expect(goCloak.ProtocolMappers).NotTo(BeNil())
@@ -148,15 +146,15 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := testClientID
+			clientSecret := ""
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID: &clientID,
 				RegisteredNodes: map[string]int32{
 					"node1": 12345,
 					"node2": 67890,
 				},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying RegisteredNodes conversion from int32 to int")
 			Expect(goCloak.RegisteredNodes).NotTo(BeNil())
@@ -168,15 +166,15 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := testClientID
+			clientSecret := ""
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID: &clientID,
 				Access: map[string]bool{
 					"view":      true,
 					"configure": false,
 				},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying Access conversion from bool to interface{}")
 			Expect(goCloak.Access).NotTo(BeNil())
@@ -188,11 +186,10 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := testClientID
-			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID: &clientID,
-			}
+			clientSecret := ""
+			clientRep := &keycloakv1.ClientRepresentation{}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying nil fields are handled")
 			Expect(goCloak.ClientID).To(Equal(&clientID))
@@ -225,7 +222,7 @@ var _ = Describe("Client Controller", func() {
 			By("Creating the custom resource with required fields")
 
 			realm := realmMaster
-			clientID := testClientID
+			secretRef := keycloakv1.ClientSecretReference{Name: "test-client-credentials"}
 
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
@@ -233,9 +230,9 @@ var _ = Describe("Client Controller", func() {
 					Namespace: "default",
 				},
 				Spec: keycloakv1.ClientSpec{
-					Realm: &realm,
+					Realm:     &realm,
+					SecretRef: secretRef,
 					Client: keycloakv1.ClientRepresentation{
-						ClientID: &clientID,
 						Enabled:  boolPtr(true),
 						Protocol: strPtr("openid-connect"),
 					},
@@ -250,7 +247,7 @@ var _ = Describe("Client Controller", func() {
 			}).Should(Succeed())
 
 			Expect(createdClient.Spec.Realm).To(Equal(&realm))
-			Expect(createdClient.Spec.Client.ClientID).To(Equal(&clientID))
+			Expect(createdClient.Spec.SecretRef.Name).To(Equal("test-client-credentials"))
 
 			By("Verifying finalizer is added by the controller")
 			// Note: Finalizer addition requires the controller to reconcile,
@@ -261,7 +258,7 @@ var _ = Describe("Client Controller", func() {
 		It("Should reject a Client resource without required realm", func() {
 			By("Attempting to create resource without realm")
 
-			clientID := "test-client-id-invalid"
+			secretRef := keycloakv1.ClientSecretReference{Name: "test-client-credentials"}
 
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
@@ -269,10 +266,9 @@ var _ = Describe("Client Controller", func() {
 					Namespace: "default",
 				},
 				Spec: keycloakv1.ClientSpec{
-					Realm: nil, // Missing required field
-					Client: keycloakv1.ClientRepresentation{
-						ClientID: &clientID,
-					},
+					Realm:     nil, // Missing required field
+					SecretRef: secretRef,
+					Client:    keycloakv1.ClientRepresentation{},
 				},
 			}
 
@@ -336,19 +332,18 @@ var _ = Describe("Client Controller", func() {
 				Scheme: k8sClient.Scheme(),
 			}
 
-			clientID := "validation-client"
 			// Create resource with realm (passes CRD validation)
 			realm := realmMaster
+			secretRef := keycloakv1.ClientSecretReference{Name: "validation-secret"}
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      resourceName,
 					Namespace: "default",
 				},
 				Spec: keycloakv1.ClientSpec{
-					Realm: &realm,
-					Client: keycloakv1.ClientRepresentation{
-						ClientID: &clientID,
-					},
+					Realm:     &realm,
+					SecretRef: secretRef,
+					Client:    keycloakv1.ClientRepresentation{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
@@ -377,13 +372,12 @@ var _ = Describe("Client Controller", func() {
 			}
 		})
 
-		It("Should return error when clientId is nil during reconciliation", func() {
+		It("Should return error when secretRef.name is empty during reconciliation", func() {
 			reconciler := &ClientReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 
-			clientID := "validation-client-2"
 			realm := realmMaster
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
@@ -391,45 +385,26 @@ var _ = Describe("Client Controller", func() {
 					Namespace: "default",
 				},
 				Spec: keycloakv1.ClientSpec{
-					Realm: &realm,
-					Client: keycloakv1.ClientRepresentation{
-						ClientID: &clientID,
-					},
+					Realm:     &realm,
+					SecretRef: keycloakv1.ClientSecretReference{Name: ""},
+					Client:    keycloakv1.ClientRepresentation{},
 				},
 			}
-			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-
-			typeNamespacedName2 := types.NamespacedName{
-				Name:      resourceName + "-2",
-				Namespace: "default",
-			}
-
-			// Get resource and try to update clientId to nil
-			Eventually(func() error {
-				return k8sClient.Get(ctx, typeNamespacedName2, resource)
-			}).Should(Succeed())
-
-			resource.Spec.Client.ClientID = nil
-			err := k8sClient.Update(ctx, resource)
+			err := k8sClient.Create(ctx, resource)
 
 			By("Attempting reconciliation should fail validation")
 			if err == nil {
-				req := ctrl.Request{
-					NamespacedName: typeNamespacedName2,
+				typeNamespacedName2 := types.NamespacedName{
+					Name:      resourceName + "-2",
+					Namespace: "default",
 				}
-
+				req := ctrl.Request{NamespacedName: typeNamespacedName2}
 				_, reconcileErr := reconciler.Reconcile(ctx, req)
 				Expect(reconcileErr).To(HaveOccurred())
-				Expect(reconcileErr.Error()).To(ContainSubstring("clientId is required"))
+				Expect(reconcileErr.Error()).To(ContainSubstring("secretRef.name is required"))
 			} else {
-				// CRD validation prevented the update
+				// CRD validation prevented the creation
 				Expect(err).To(HaveOccurred())
-			}
-
-			// Cleanup
-			resource2 := &keycloakv1.Client{}
-			if k8sClient.Get(ctx, typeNamespacedName2, resource2) == nil {
-				Expect(k8sClient.Delete(ctx, resource2)).To(Succeed())
 			}
 		})
 	})
@@ -455,7 +430,7 @@ var _ = Describe("Client Controller", func() {
 		It("Should update status conditions", func() {
 			By("Creating a Client resource")
 			realm := testRealm
-			clientID := "status-test-client"
+			secretRef := keycloakv1.ClientSecretReference{Name: "status-secret"}
 
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
@@ -463,10 +438,9 @@ var _ = Describe("Client Controller", func() {
 					Namespace: "default",
 				},
 				Spec: keycloakv1.ClientSpec{
-					Realm: &realm,
-					Client: keycloakv1.ClientRepresentation{
-						ClientID: &clientID,
-					},
+					Realm:     &realm,
+					SecretRef: secretRef,
+					Client:    keycloakv1.ClientRepresentation{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
@@ -505,7 +479,7 @@ var _ = Describe("Client Controller", func() {
 		It("Should update existing status condition", func() {
 			By("Creating a Client resource with initial status")
 			realm := testRealm
-			clientID := "status-update-client"
+			secretRef := keycloakv1.ClientSecretReference{Name: "status-secret-update"}
 
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
@@ -513,10 +487,9 @@ var _ = Describe("Client Controller", func() {
 					Namespace: "default",
 				},
 				Spec: keycloakv1.ClientSpec{
-					Realm: &realm,
-					Client: keycloakv1.ClientRepresentation{
-						ClientID: &clientID,
-					},
+					Realm:     &realm,
+					SecretRef: secretRef,
+					Client:    keycloakv1.ClientRepresentation{},
 				},
 				Status: keycloakv1.ClientStatus{
 					Conditions: []metav1.Condition{
@@ -596,7 +569,7 @@ var _ = Describe("Client Controller", func() {
 		It("Should add finalizer to new resource", func() {
 			By("Creating a Client resource")
 			realm := testRealm
-			clientID := "finalizer-test-client"
+			secretRef := keycloakv1.ClientSecretReference{Name: "finalizer-secret"}
 
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
@@ -604,10 +577,9 @@ var _ = Describe("Client Controller", func() {
 					Namespace: "default",
 				},
 				Spec: keycloakv1.ClientSpec{
-					Realm: &realm,
-					Client: keycloakv1.ClientRepresentation{
-						ClientID: &clientID,
-					},
+					Realm:     &realm,
+					SecretRef: secretRef,
+					Client:    keycloakv1.ClientRepresentation{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
@@ -638,7 +610,7 @@ var _ = Describe("Client Controller", func() {
 		It("Should handle resource with finalizer being deleted", func() {
 			By("Creating a Client resource with finalizer")
 			realm := testRealm
-			clientID := "deletion-test-client"
+			secretRef := keycloakv1.ClientSecretReference{Name: "finalizer-secret-del"}
 
 			resource := &keycloakv1.Client{
 				ObjectMeta: metav1.ObjectMeta{
@@ -647,10 +619,9 @@ var _ = Describe("Client Controller", func() {
 					Finalizers: []string{clientFinalizer},
 				},
 				Spec: keycloakv1.ClientSpec{
-					Realm: &realm,
-					Client: keycloakv1.ClientRepresentation{
-						ClientID: &clientID,
-					},
+					Realm:     &realm,
+					SecretRef: secretRef,
+					Client:    keycloakv1.ClientRepresentation{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
@@ -699,10 +670,10 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "saml-client"
+			clientSecret := ""
 			protocol := protocolSAML
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID: &clientID,
 				Protocol: &protocol,
 				Attributes: map[string]string{
 					"saml.assertion.signature":            "true",
@@ -715,7 +686,7 @@ var _ = Describe("Client Controller", func() {
 				},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying SAML protocol")
 			Expect(*goCloak.Protocol).To(Equal("saml"))
@@ -730,13 +701,13 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "saml-client-with-mappers"
+			clientSecret := ""
 			protocol := protocolSAML
 			mapperName := "role-list"
 			mapperProtocol := "saml"
 			protocolMapper := "saml-role-list-mapper"
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID: &clientID,
 				Protocol: &protocol,
 				ProtocolMappers: []keycloakv1.ProtocolMapperRepresentation{
 					{
@@ -752,7 +723,7 @@ var _ = Describe("Client Controller", func() {
 				},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying SAML mapper is converted")
 			Expect(goCloak.ProtocolMappers).NotTo(BeNil())
@@ -769,15 +740,15 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := testClientID
+			clientSecret := ""
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID:        &clientID,
 				RedirectUris:    []string{},
 				WebOrigins:      []string{},
 				DefaultRoles:    []string{},
 				ProtocolMappers: []keycloakv1.ProtocolMapperRepresentation{},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying empty arrays are handled")
 			Expect(goCloak.RedirectURIs).NotTo(BeNil())
@@ -792,33 +763,31 @@ var _ = Describe("Client Controller", func() {
 
 			id := "uuid-123"
 			clientID := "test-client" //nolint:goconst // Local variable in test context
+			clientSecret := "super-secret"
 			name := "Test Client"
 			description := "A test client"
 			rootURL := "https://example.com"
 			adminURL := "https://example.com/admin"
 			baseURL := "https://example.com/base"
 			protocol := protocolOIDC
-			secret := "super-secret"
 			authType := "client-secret"
 			regToken := "registration-token"
 			origin := "test-origin"
 
 			clientRep := &keycloakv1.ClientRepresentation{
 				ID:                      &id,
-				ClientID:                &clientID,
 				Name:                    &name,
 				Description:             &description,
 				RootURL:                 &rootURL,
 				AdminURL:                &adminURL,
 				BaseURL:                 &baseURL,
 				Protocol:                &protocol,
-				Secret:                  &secret,
 				ClientAuthenticatorType: &authType,
 				RegistrationAccessToken: &regToken,
 				Origin:                  &origin,
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying all string pointers are mapped")
 			Expect(*goCloak.ID).To(Equal(id))
@@ -829,7 +798,7 @@ var _ = Describe("Client Controller", func() {
 			Expect(*goCloak.AdminURL).To(Equal(adminURL))
 			Expect(*goCloak.BaseURL).To(Equal(baseURL))
 			Expect(*goCloak.Protocol).To(Equal(protocol))
-			Expect(*goCloak.Secret).To(Equal(secret))
+			Expect(*goCloak.Secret).To(Equal(clientSecret))
 			Expect(*goCloak.ClientAuthenticatorType).To(Equal(authType))
 			Expect(*goCloak.RegistrationAccessToken).To(Equal(regToken))
 			Expect(*goCloak.Origin).To(Equal(origin))
@@ -839,9 +808,9 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "test-client"
+			clientSecret := ""
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID:                     &clientID,
 				SurrogateAuthRequired:        boolPtr(true),
 				Enabled:                      boolPtr(true),
 				BearerOnly:                   boolPtr(false),
@@ -856,7 +825,7 @@ var _ = Describe("Client Controller", func() {
 				FullScopeAllowed:             boolPtr(true),
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying all boolean pointers are mapped")
 			Expect(*goCloak.SurrogateAuthRequired).To(BeTrue())
@@ -877,16 +846,16 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "test-client"
+			clientSecret := ""
 			notBefore := int32(1234567890)
 			nodeTimeout := int32(300)
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID:                  &clientID,
 				NotBefore:                 &notBefore,
 				NodeReRegistrationTimeout: &nodeTimeout,
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying integer pointers are mapped")
 			Expect(*goCloak.NotBefore).To(Equal(notBefore))
@@ -897,9 +866,9 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "test-client"
+			clientSecret := ""
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID: &clientID,
 				Attributes: map[string]string{
 					"key1": "value1",
 					"key2": "value2",
@@ -910,7 +879,7 @@ var _ = Describe("Client Controller", func() {
 				},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying maps are copied correctly")
 			Expect(goCloak.Attributes).NotTo(BeNil())
@@ -924,9 +893,9 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "test-client"
+			clientSecret := ""
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID:             &clientID,
 				DefaultRoles:         []string{"role1", "role2"},
 				RedirectUris:         []string{"http://localhost/callback"},
 				WebOrigins:           []string{"http://localhost"},
@@ -934,7 +903,7 @@ var _ = Describe("Client Controller", func() {
 				OptionalClientScopes: []string{"email", "phone"},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying string arrays are copied correctly")
 			Expect(goCloak.DefaultRoles).NotTo(BeNil())
@@ -950,13 +919,13 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "test-client"
+			clientSecret := ""
 			mapperID := "mapper-123"
 			mapperName := "complex-mapper"
 			protocol := protocolOIDC
 			protocolMapper := "oidc-usermodel-attribute-mapper"
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID: &clientID,
 				ProtocolMappers: []keycloakv1.ProtocolMapperRepresentation{
 					{
 						ID:             &mapperID,
@@ -974,7 +943,7 @@ var _ = Describe("Client Controller", func() {
 				},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying complex protocol mapper is mapped correctly")
 			Expect(goCloak.ProtocolMappers).NotTo(BeNil())
@@ -996,9 +965,9 @@ var _ = Describe("Client Controller", func() {
 			func(clientType string, publicClient bool, standardFlow bool, implicitFlow bool, directAccess bool, serviceAccount bool) {
 				reconciler := &ClientReconciler{}
 				clientID := clientType + "-client"
+				clientSecret := ""
 
 				clientRep := &keycloakv1.ClientRepresentation{
-					ClientID:                  &clientID,
 					PublicClient:              &publicClient,
 					StandardFlowEnabled:       &standardFlow,
 					ImplicitFlowEnabled:       &implicitFlow,
@@ -1006,7 +975,7 @@ var _ = Describe("Client Controller", func() {
 					ServiceAccountsEnabled:    &serviceAccount,
 				}
 
-				goCloak := reconciler.convertToGoCloak(clientRep)
+				goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 				Expect(*goCloak.PublicClient).To(Equal(publicClient))
 				Expect(*goCloak.StandardFlowEnabled).To(Equal(standardFlow))
@@ -1025,13 +994,13 @@ var _ = Describe("Client Controller", func() {
 			func(protocol string, expectedProtocol string) {
 				reconciler := &ClientReconciler{}
 				clientID := "test-protocol-client"
+				clientSecret := ""
 
 				clientRep := &keycloakv1.ClientRepresentation{
-					ClientID: &clientID,
 					Protocol: &protocol,
 				}
 
-				goCloak := reconciler.convertToGoCloak(clientRep)
+				goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 				if goCloak.Protocol != nil {
 					Expect(*goCloak.Protocol).To(Equal(expectedProtocol))

@@ -37,7 +37,7 @@ jobs:
             echo "is_operator=true" >> $GITHUB_OUTPUT
             echo "is_chart=false" >> $GITHUB_OUTPUT
             # Extract version (remove v prefix if present)
-            VERSION=$(echo "$TAG" | sed 's/^v//')
+            VERSION=$(echo "$TAG" | sed 's/^operator-v//')
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "Detected: Operator release (version: $VERSION)"
           fi

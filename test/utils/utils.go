@@ -62,6 +62,7 @@ func Run(cmd *exec.Cmd) (string, error) {
 // UninstallCertManager uninstalls the cert manager
 func UninstallCertManager() {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
+	// #nosec G204 -- test utility with safe URL
 	cmd := exec.Command("kubectl", "delete", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		warnError(err)
@@ -73,6 +74,7 @@ func UninstallCertManager() {
 		"cert-manager-controller",
 	}
 	for _, lease := range kubeSystemLeases {
+		// #nosec G204 -- test utility with predefined lease names
 		cmd = exec.Command("kubectl", "delete", "lease", lease,
 			"-n", "kube-system", "--ignore-not-found", "--force", "--grace-period=0")
 		if _, err := Run(cmd); err != nil {
@@ -84,6 +86,7 @@ func UninstallCertManager() {
 // InstallCertManager installs the cert manager bundle.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
+	// #nosec G204 -- test utility with safe URL
 	cmd := exec.Command("kubectl", "apply", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		return err
@@ -144,6 +147,7 @@ func LoadImageToKindClusterWithName(name string) error {
 	if v, ok := os.LookupEnv("KIND"); ok {
 		kindBinary = v
 	}
+	// #nosec G204 -- test utility with controlled options
 	cmd := exec.Command(kindBinary, kindOptions...)
 	_, err := Run(cmd)
 	return err
@@ -176,8 +180,7 @@ func GetProjectDir() (string, error) {
 // UncommentCode searches for target in the file and remove the comment prefix
 // of the target content. The target content may span multiple lines.
 func UncommentCode(filename, target, prefix string) error {
-	// false positive
-	// nolint:gosec
+	// #nosec G304 -- test utility with caller-provided path
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("failed to read file %q: %w", filename, err)
@@ -190,6 +193,7 @@ func UncommentCode(filename, target, prefix string) error {
 	}
 
 	out := new(bytes.Buffer)
+	// nolint:gosec // G304: test utility reading files with caller-provided paths
 	_, err = out.Write(content[:idx])
 	if err != nil {
 		return fmt.Errorf("failed to write to output: %w", err)
@@ -216,8 +220,7 @@ func UncommentCode(filename, target, prefix string) error {
 		return fmt.Errorf("failed to write to output: %w", err)
 	}
 
-	// false positive
-	// nolint:gosec
+	// #nosec G306 -- test utility needs readable permissions
 	if err = os.WriteFile(filename, out.Bytes(), 0644); err != nil {
 		return fmt.Errorf("failed to write file %q: %w", filename, err)
 	}
