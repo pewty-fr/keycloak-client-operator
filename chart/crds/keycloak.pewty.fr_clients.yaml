@@ -67,8 +67,6 @@ spec:
                     type: boolean
                   clientAuthenticatorType:
                     type: string
-                  clientId:
-                    type: string
                   clientTemplate:
                     type: string
                   consentRequired:
@@ -147,8 +145,6 @@ spec:
                     type: string
                   rootUrl:
                     type: string
-                  secret:
-                    type: string
                   serviceAccountsEnabled:
                     type: boolean
                   standardFlowEnabled:
@@ -170,9 +166,29 @@ spec:
                 type: object
               realm:
                 type: string
+              secretRef:
+                description: |-
+                  SecretRef references a Kubernetes Secret containing the client ID and secret.
+                  The operator will read credentials from this secret and update it with generated values.
+                properties:
+                  clientIdKey:
+                    description: 'Key in the secret for the client ID (default: "clientId")'
+                    type: string
+                  clientSecretKey:
+                    description: 'Key in the secret for the client secret (default:
+                      "clientSecret")'
+                    type: string
+                  name:
+                    description: Name of the secret in the same namespace as the Client
+                      resource
+                    type: string
+                required:
+                - name
+                type: object
             required:
             - client
             - realm
+            - secretRef
             type: object
           status:
             description: status defines the observed state of Client
