@@ -893,9 +893,9 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "test-client"
+			clientSecret := ""
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID:             &clientID,
 				DefaultRoles:         []string{"role1", "role2"},
 				RedirectUris:         []string{"http://localhost/callback"},
 				WebOrigins:           []string{"http://localhost"},
@@ -903,7 +903,7 @@ var _ = Describe("Client Controller", func() {
 				OptionalClientScopes: []string{"email", "phone"},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying string arrays are copied correctly")
 			Expect(goCloak.DefaultRoles).NotTo(BeNil())
@@ -919,13 +919,13 @@ var _ = Describe("Client Controller", func() {
 			reconciler := &ClientReconciler{}
 
 			clientID := "test-client"
+			clientSecret := ""
 			mapperID := "mapper-123"
 			mapperName := "complex-mapper"
 			protocol := protocolOIDC
 			protocolMapper := "oidc-usermodel-attribute-mapper"
 
 			clientRep := &keycloakv1.ClientRepresentation{
-				ClientID: &clientID,
 				ProtocolMappers: []keycloakv1.ProtocolMapperRepresentation{
 					{
 						ID:             &mapperID,
@@ -943,7 +943,7 @@ var _ = Describe("Client Controller", func() {
 				},
 			}
 
-			goCloak := reconciler.convertToGoCloak(clientRep)
+			goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 			By("Verifying complex protocol mapper is mapped correctly")
 			Expect(goCloak.ProtocolMappers).NotTo(BeNil())
@@ -965,9 +965,9 @@ var _ = Describe("Client Controller", func() {
 			func(clientType string, publicClient bool, standardFlow bool, implicitFlow bool, directAccess bool, serviceAccount bool) {
 				reconciler := &ClientReconciler{}
 				clientID := clientType + "-client"
+				clientSecret := ""
 
 				clientRep := &keycloakv1.ClientRepresentation{
-					ClientID:                  &clientID,
 					PublicClient:              &publicClient,
 					StandardFlowEnabled:       &standardFlow,
 					ImplicitFlowEnabled:       &implicitFlow,
@@ -975,7 +975,7 @@ var _ = Describe("Client Controller", func() {
 					ServiceAccountsEnabled:    &serviceAccount,
 				}
 
-				goCloak := reconciler.convertToGoCloak(clientRep)
+				goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 				Expect(*goCloak.PublicClient).To(Equal(publicClient))
 				Expect(*goCloak.StandardFlowEnabled).To(Equal(standardFlow))
@@ -994,13 +994,13 @@ var _ = Describe("Client Controller", func() {
 			func(protocol string, expectedProtocol string) {
 				reconciler := &ClientReconciler{}
 				clientID := "test-protocol-client"
+				clientSecret := ""
 
 				clientRep := &keycloakv1.ClientRepresentation{
-					ClientID: &clientID,
 					Protocol: &protocol,
 				}
 
-				goCloak := reconciler.convertToGoCloak(clientRep)
+				goCloak := reconciler.convertToGoCloak(clientRep, clientID, clientSecret)
 
 				if goCloak.Protocol != nil {
 					Expect(*goCloak.Protocol).To(Equal(expectedProtocol))
