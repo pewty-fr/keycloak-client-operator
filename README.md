@@ -151,8 +151,11 @@ metadata:
   namespace: default
 spec:
   realm: master
+  secretRef:
+    name: "my-secret"
+    clientIdKey: "client.id"
+    clientSecretKey: "client.secret"
   client:
-    clientId: my-application
     enabled: true
     publicClient: false
     standardFlowEnabled: true
@@ -181,8 +184,11 @@ metadata:
   name: frontend-app
 spec:
   realm: production
+  secretRef:
+    name: "my-secret"
+    clientIdKey: "client.id"
+    clientSecretKey: "client.secret"
   client:
-    clientId: frontend-spa
     enabled: true
     publicClient: true
     standardFlowEnabled: true
@@ -205,8 +211,11 @@ metadata:
   name: api-service
 spec:
   realm: production
+  secretRef:
+    name: "my-secret"
+    clientIdKey: "client.id"
+    clientSecretKey: "client.secret"
   client:
-    clientId: api-backend
     enabled: true
     publicClient: false
     serviceAccountsEnabled: true

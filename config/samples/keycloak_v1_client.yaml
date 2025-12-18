@@ -5,12 +5,12 @@ metadata:
     app.kubernetes.io/name: keycloak-client-operator
     app.kubernetes.io/managed-by: kustomize
   name: client-sample
-  namespace: golden-path-spring-app-uat
+  namespace: my-secret
 spec:
-  realm: "test"
+  realm: "my-realm"
   # Reference to Kubernetes Secret containing client credentials
   secretRef:
-    name: "golden-path-spring-app-uat-back-springconfig"
+    name: "my-secret"
     # Optional: specify custom keys (defaults shown below)
     clientIdKey: "client.id"
     clientSecretKey: "client.secret"
