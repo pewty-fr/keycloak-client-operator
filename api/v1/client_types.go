@@ -23,14 +23,28 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// ClientSecretReference defines the secret containing client credentials
+type ClientSecretReference struct {
+	// Name of the secret in the same namespace as the Client resource
+	Name string `json:"name"`
+	// Key in the secret for the client ID (default: "clientId")
+	// +optional
+	ClientIDKey string `json:"clientIdKey,omitempty"`
+	// Key in the secret for the client secret (default: "clientSecret")
+	// +optional
+	ClientSecretKey string `json:"clientSecretKey,omitempty"`
+}
+
 type ClientSpec struct {
-	Realm  *string              `json:"realm"`
-	Client ClientRepresentation `json:"client"`
+	Realm *string `json:"realm"`
+	// SecretRef references a Kubernetes Secret containing the client ID and secret.
+	// The operator will read credentials from this secret and update it with generated values.
+	SecretRef ClientSecretReference `json:"secretRef"`
+	Client    ClientRepresentation  `json:"client"`
 }
 
 type ClientRepresentation struct {
 	ID                                 *string                        `json:"id,omitempty"`
-	ClientID                           *string                        `json:"clientId,omitempty"`
 	Name                               *string                        `json:"name,omitempty"`
 	Description                        *string                        `json:"description,omitempty"`
 	Type                               *string                        `json:"type,omitempty"`
@@ -41,7 +55,6 @@ type ClientRepresentation struct {
 	Enabled                            *bool                          `json:"enabled,omitempty"`
 	AlwaysDisplayInConsole             *bool                          `json:"alwaysDisplayInConsole,omitempty"`
 	ClientAuthenticatorType            *string                        `json:"clientAuthenticatorType,omitempty"`
-	Secret                             *string                        `json:"secret,omitempty"`
 	RegistrationAccessToken            *string                        `json:"registrationAccessToken,omitempty"`
 	DefaultRoles                       []string                       `json:"defaultRoles,omitempty"`
 	RedirectUris                       []string                       `json:"redirectUris,omitempty"`

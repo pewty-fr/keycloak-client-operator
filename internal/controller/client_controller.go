@@ -21,9 +21,11 @@ import (
 	"fmt"
 
 	gocloak "github.com/Nerzal/gocloak/v13"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -48,6 +50,7 @@ type ClientReconciler struct {
 // +kubebuilder:rbac:groups=keycloak.pewty.fr,resources=clients,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=keycloak.pewty.fr,resources=clients/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=keycloak.pewty.fr,resources=clients/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -79,9 +82,17 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		logger.Error(err, "Invalid Client spec")
 		return ctrl.Result{}, err
 	}
-	if kcClient.Spec.Client.ClientID == nil {
-		err := fmt.Errorf("clientId is required")
+	if kcClient.Spec.SecretRef.Name == "" {
+		err := fmt.Errorf("secretRef.name is required")
 		logger.Error(err, "Invalid Client spec")
+		return ctrl.Result{}, err
+	}
+
+	// Get client credentials from referenced secret
+	clientID, clientSecret, err := r.getClientCredentials(ctx, &kcClient)
+	if err != nil {
+		logger.Error(err, "Failed to get client credentials from secret")
+		r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "SecretReadFailed", fmt.Sprintf("Failed to read secret: %v", err))
 		return ctrl.Result{}, err
 	}
 
@@ -97,10 +108,17 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if !kcClient.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&kcClient, clientFinalizer) {
 			// Resource is being deleted, perform cleanup
-			if err := r.deleteClientInKeycloak(ctx, r.KeycloakClient, token.AccessToken, &kcClient); err != nil {
-				logger.Error(err, "Failed to delete client in Keycloak")
-				r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "DeletionFailed", fmt.Sprintf("Failed to delete: %v", err))
-				return ctrl.Result{}, err
+			// Get clientID from secret before deletion
+			deleteClientID, _, err := r.getClientCredentials(ctx, &kcClient)
+			if err != nil {
+				logger.Error(err, "Failed to get client credentials for deletion, skipping Keycloak cleanup")
+				// Continue with finalizer removal even if we can't read the secret
+			} else {
+				if err := r.deleteClientInKeycloak(ctx, r.KeycloakClient, token.AccessToken, &kcClient, deleteClientID); err != nil {
+					logger.Error(err, "Failed to delete client in Keycloak")
+					r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "DeletionFailed", fmt.Sprintf("Failed to delete: %v", err))
+					return ctrl.Result{}, err
+				}
 			}
 
 			// Remove finalizer to allow deletion
@@ -125,7 +143,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// 4. Check if client exists in Keycloak
 	clients, err := r.KeycloakClient.GetClients(ctx, token.AccessToken, *kcClient.Spec.Realm, gocloak.GetClientsParams{
-		ClientID: kcClient.Spec.Client.ClientID,
+		ClientID: &clientID,
 	})
 	if err != nil {
 		logger.Error(err, "Failed to query Keycloak clients")
@@ -135,9 +153,9 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	if len(clients) == 0 {
 		// 5. Client doesn't exist, create it
-		logger.Info("Creating client in Keycloak", "clientID", *kcClient.Spec.Client.ClientID)
+		logger.Info("Creating client in Keycloak", "clientID", clientID)
 
-		newClient := r.convertToGoCloak(&kcClient.Spec.Client)
+		newClient := r.convertToGoCloak(&kcClient.Spec.Client, clientID, clientSecret)
 		clientID, err := r.KeycloakClient.CreateClient(ctx, token.AccessToken, *kcClient.Spec.Realm, newClient)
 		if err != nil {
 			logger.Error(err, "Failed to create client in Keycloak")
@@ -145,14 +163,30 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			return ctrl.Result{}, err
 		}
 
-		logger.Info("Successfully created client in Keycloak", "clientID", *kcClient.Spec.Client.ClientID, "id", clientID)
+		logger.Info("Successfully created client in Keycloak", "clientID", clientID, "id", clientID)
+
+		// Get the created client to retrieve generated secret
+		createdClient, err := r.KeycloakClient.GetClient(ctx, token.AccessToken, *kcClient.Spec.Realm, clientID)
+		if err != nil {
+			logger.Error(err, "Failed to get created client details")
+			r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "CreationFailed", fmt.Sprintf("Client created but failed to retrieve: %v", err))
+			return ctrl.Result{}, err
+		}
+
+		// Update secret with credentials
+		if err := r.updateSecretWithCredentials(ctx, &kcClient, createdClient.ClientID, createdClient.Secret); err != nil {
+			logger.Error(err, "Failed to update secret with credentials")
+			r.updateStatus(ctx, &kcClient, metav1.ConditionFalse, "SecretUpdateFailed", fmt.Sprintf("Failed to update secret: %v", err))
+			return ctrl.Result{}, err
+		}
+
 		r.updateStatus(ctx, &kcClient, metav1.ConditionTrue, "Created", "Client successfully created in Keycloak")
 	} else {
 		// 6. Client exists, update it
-		logger.Info("Updating client in Keycloak", "clientID", *kcClient.Spec.Client.ClientID)
+		logger.Info("Updating client in Keycloak", "clientID", clientID)
 
 		existingClient := clients[0]
-		updatedClient := r.convertToGoCloak(&kcClient.Spec.Client)
+		updatedClient := r.convertToGoCloak(&kcClient.Spec.Client, clientID, clientSecret)
 
 		// Preserve the internal ID from the existing client
 		updatedClient.ID = existingClient.ID
@@ -164,7 +198,15 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			return ctrl.Result{}, err
 		}
 
-		logger.Info("Successfully updated client in Keycloak", "clientID", *kcClient.Spec.Client.ClientID)
+		// Update secret with current credentials (in case secret was regenerated)
+		if updatedClient.Secret != nil {
+			if err := r.updateSecretWithCredentials(ctx, &kcClient, updatedClient.ClientID, updatedClient.Secret); err != nil {
+				logger.Error(err, "Failed to update secret with credentials")
+				// Don't fail the reconciliation for secret update failures
+			}
+		}
+
+		logger.Info("Successfully updated client in Keycloak", "clientID", clientID)
 		r.updateStatus(ctx, &kcClient, metav1.ConditionTrue, "Updated", "Client successfully updated in Keycloak")
 	}
 
@@ -172,11 +214,11 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 }
 
 // deleteClientInKeycloak deletes a client from Keycloak if it exists
-func (r *ClientReconciler) deleteClientInKeycloak(ctx context.Context, gc *gocloak.GoCloak, token string, kcClient *keycloakv1.Client) error {
+func (r *ClientReconciler) deleteClientInKeycloak(ctx context.Context, gc *gocloak.GoCloak, token string, kcClient *keycloakv1.Client, clientID string) error {
 	logger := logf.FromContext(ctx)
 
 	clients, err := gc.GetClients(ctx, token, *kcClient.Spec.Realm, gocloak.GetClientsParams{
-		ClientID: kcClient.Spec.Client.ClientID,
+		ClientID: &clientID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to query client: %w", err)
@@ -187,19 +229,19 @@ func (r *ClientReconciler) deleteClientInKeycloak(ctx context.Context, gc *goclo
 		if err != nil {
 			return fmt.Errorf("failed to delete client: %w", err)
 		}
-		logger.Info("Successfully deleted client from Keycloak", "clientID", *kcClient.Spec.Client.ClientID)
+		logger.Info("Successfully deleted client from Keycloak", "clientID", clientID)
 	} else {
-		logger.Info("Client not found in Keycloak, nothing to delete", "clientID", *kcClient.Spec.Client.ClientID)
+		logger.Info("Client not found in Keycloak, nothing to delete", "clientID", clientID)
 	}
 
 	return nil
 }
 
 // convertToGoCloak converts the CRD ClientRepresentation to gocloak.Client
-func (r *ClientReconciler) convertToGoCloak(clientRep *keycloakv1.ClientRepresentation) gocloak.Client {
+func (r *ClientReconciler) convertToGoCloak(clientRep *keycloakv1.ClientRepresentation, clientID string, clientSecret string) gocloak.Client {
 	gc := gocloak.Client{
 		ID:                                 clientRep.ID,
-		ClientID:                           clientRep.ClientID,
+		ClientID:                           &clientID,
 		Name:                               clientRep.Name,
 		Description:                        clientRep.Description,
 		RootURL:                            clientRep.RootURL,
@@ -208,7 +250,7 @@ func (r *ClientReconciler) convertToGoCloak(clientRep *keycloakv1.ClientRepresen
 		SurrogateAuthRequired:              clientRep.SurrogateAuthRequired,
 		Enabled:                            clientRep.Enabled,
 		ClientAuthenticatorType:            clientRep.ClientAuthenticatorType,
-		Secret:                             clientRep.Secret,
+		Secret:                             &clientSecret,
 		RegistrationAccessToken:            clientRep.RegistrationAccessToken,
 		DefaultRoles:                       &clientRep.DefaultRoles,
 		RedirectURIs:                       &clientRep.RedirectUris,
@@ -267,6 +309,99 @@ func (r *ClientReconciler) convertToGoCloak(clientRep *keycloakv1.ClientRepresen
 	}
 
 	return gc
+}
+
+// getClientCredentials reads clientID and clientSecret from the referenced Kubernetes Secret
+func (r *ClientReconciler) getClientCredentials(ctx context.Context, kcClient *keycloakv1.Client) (string, string, error) {
+	logger := logf.FromContext(ctx)
+
+	// Default keys
+	clientIDKey := "clientId"
+	clientSecretKey := "clientSecret"
+
+	if kcClient.Spec.SecretRef.ClientIDKey != "" {
+		clientIDKey = kcClient.Spec.SecretRef.ClientIDKey
+	}
+	if kcClient.Spec.SecretRef.ClientSecretKey != "" {
+		clientSecretKey = kcClient.Spec.SecretRef.ClientSecretKey
+	}
+
+	// Get the secret
+	secret := &corev1.Secret{}
+	secretName := types.NamespacedName{
+		Name:      kcClient.Spec.SecretRef.Name,
+		Namespace: kcClient.Namespace,
+	}
+
+	if err := r.Get(ctx, secretName, secret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", "", fmt.Errorf("secret %s not found in namespace %s", kcClient.Spec.SecretRef.Name, kcClient.Namespace)
+		}
+		return "", "", fmt.Errorf("failed to get secret: %w", err)
+	}
+
+	// Read clientID
+	clientIDBytes, ok := secret.Data[clientIDKey]
+	if !ok || len(clientIDBytes) == 0 {
+		return "", "", fmt.Errorf("key %s not found in secret %s", clientIDKey, kcClient.Spec.SecretRef.Name)
+	}
+	clientID := string(clientIDBytes)
+
+	// Read clientSecret
+	clientSecretBytes, ok := secret.Data[clientSecretKey]
+	if !ok || len(clientSecretBytes) == 0 {
+		logger.Info("Client secret not found in secret, will be generated by Keycloak", "secretKey", clientSecretKey)
+		return clientID, "", nil
+	}
+	clientSecret := string(clientSecretBytes)
+
+	return clientID, clientSecret, nil
+}
+
+// updateSecretWithCredentials updates the referenced Kubernetes Secret with client credentials
+func (r *ClientReconciler) updateSecretWithCredentials(ctx context.Context, kcClient *keycloakv1.Client, clientID *string, clientSecret *string) error {
+	logger := logf.FromContext(ctx)
+
+	if clientID == nil || clientSecret == nil {
+		logger.Info("Client credentials are nil, skipping secret update")
+		return nil
+	}
+
+	// Default keys
+	clientIDKey := "clientId"
+	clientSecretKey := "clientSecret"
+
+	if kcClient.Spec.SecretRef.ClientIDKey != "" {
+		clientIDKey = kcClient.Spec.SecretRef.ClientIDKey
+	}
+	if kcClient.Spec.SecretRef.ClientSecretKey != "" {
+		clientSecretKey = kcClient.Spec.SecretRef.ClientSecretKey
+	}
+
+	// Get the secret
+	secret := &corev1.Secret{}
+	secretName := types.NamespacedName{
+		Name:      kcClient.Spec.SecretRef.Name,
+		Namespace: kcClient.Namespace,
+	}
+
+	if err := r.Get(ctx, secretName, secret); err != nil {
+		return fmt.Errorf("failed to get secret: %w", err)
+	}
+
+	// Update secret data
+	if secret.Data == nil {
+		secret.Data = make(map[string][]byte)
+	}
+	secret.Data[clientIDKey] = []byte(*clientID)
+	secret.Data[clientSecretKey] = []byte(*clientSecret)
+
+	if err := r.Update(ctx, secret); err != nil {
+		return fmt.Errorf("failed to update secret: %w", err)
+	}
+
+	logger.Info("Successfully updated secret with client credentials", "secret", kcClient.Spec.SecretRef.Name)
+	return nil
 }
 
 // updateStatus updates the Client resource status
