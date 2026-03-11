@@ -28,6 +28,9 @@ jobs:
       - name: Verify kind installation
         run: kind version
 
+      - name: Install ko
+        run: go install github.com/google/ko@latest
+
       - name: Running Test e2e
         run: |
           go mod tidy
