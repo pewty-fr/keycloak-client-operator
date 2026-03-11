@@ -40,11 +40,10 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
-          args: --timeout=5m
+          version: v2.5.0
 
   build:
     name: Build
