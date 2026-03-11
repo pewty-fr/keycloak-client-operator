@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/Nerzal/gocloak/v13 v13.9.0
 	github.com/go-logr/zerologr v1.2.3
-	github.com/onsi/ginkgo/v2 v2.28.0
+	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
 	github.com/rs/zerolog v1.34.0
 	k8s.io/api v0.35.0
