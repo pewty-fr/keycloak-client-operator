@@ -53,6 +53,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Set up ko
         uses: ko-build/setup-ko@v0.7
 
@@ -70,10 +76,12 @@ jobs:
           MINOR=$(echo $VERSION | cut -d. -f1-2)
           
           # Build and push with semantic version tags
-          DIGEST=$(ko build --bare --platform=linux/amd64,linux/arm64 \
+          ko build --bare --platform=linux/amd64,linux/arm64 \
             --tags=${VERSION},${MAJOR}.${MINOR},${MAJOR},latest \
-            ./cmd | grep -oP 'sha256:[a-f0-9]+')
-          
+            --image-refs=/tmp/ko-image-refs \
+            ./cmd
+
+          DIGEST=$(grep -oP 'sha256:[a-f0-9]+' /tmp/ko-image-refs | head -1)
           echo "digest=$DIGEST" >> $GITHUB_OUTPUT
 
       - name: Generate SBOM
@@ -144,14 +152,9 @@ jobs:
             });
 
       - name: Upload SBOM to release
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./sbom.spdx.json
-          asset_name: sbom.spdx.json
-          asset_content_type: application/json
+        run: gh release upload ${{ github.event.release.tag_name }} sbom.spdx.json
 
   generate-install-manifest:
     name: Generate Installation Manifest
@@ -177,14 +180,9 @@ jobs:
             > install.yaml
 
       - name: Upload manifest to release
-        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./install.yaml
-          asset_name: install.yaml
-          asset_content_type: application/x-yaml
+        run: gh release upload ${{ github.event.release.tag_name }} install.yaml
 
   publish-helm-chart:
     name: Publish Helm Chart
