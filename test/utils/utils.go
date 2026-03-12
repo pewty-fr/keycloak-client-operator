@@ -38,14 +38,14 @@ const (
 	defaultKindBinary  = "kind"
 	defaultKindCluster = "kind"
 
-	keycloakNamespace      = "keycloak"
-	keycloakHelmRelease    = "keycloak"
-	keycloakAdminUser      = "admin"
-	keycloakAdminPass      = "admin"
-	keycloakLocalPort      = "18080"
-	operatorClientID       = "keycloak-operator"
-	operatorClientRealm    = "master"
-	keycloakHelmChart = "oci://ghcr.io/cloudpirates-io/helm-charts/keycloak"
+	keycloakNamespace   = "keycloak"
+	keycloakHelmRelease = "keycloak"
+	keycloakAdminUser   = "admin"
+	keycloakAdminPass   = "admin"
+	keycloakLocalPort   = "18080"
+	operatorClientID    = "keycloak-operator"
+	operatorClientRealm = "master"
+	keycloakHelmChart   = "oci://ghcr.io/cloudpirates-io/helm-charts/keycloak"
 	// KeycloakCredSecret is the k8s secret name used to pass Keycloak credentials to the operator.
 	KeycloakCredSecret = "keycloak-operator-credentials"
 )
@@ -128,7 +128,7 @@ func SetupKeycloakOperatorAccess() (*KeycloakCredentials, error) {
 	gc := gocloak.NewClient("http://localhost:" + keycloakLocalPort)
 	gctx := context.Background()
 
-	token, err := gc.Login(gctx, "admin-cli", "", operatorClientRealm, keycloakAdminUser, keycloakAdminPass)
+	token, err := gc.LoginAdmin(gctx, keycloakAdminUser, keycloakAdminPass, operatorClientRealm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to login to Keycloak: %w", err)
 	}
@@ -143,8 +143,8 @@ func SetupKeycloakOperatorAccess() (*KeycloakCredentials, error) {
 	// Create service account client
 	svcEnabled := true
 	newClient := gocloak.Client{
-		ClientID:               gocloak.StringP(operatorClientID),
-		ServiceAccountsEnabled: &svcEnabled,
+		ClientID:                gocloak.StringP(operatorClientID),
+		ServiceAccountsEnabled:  &svcEnabled,
 		ClientAuthenticatorType: gocloak.StringP("client-secret"),
 	}
 	clientInternalID, err := gc.CreateClient(gctx, token.AccessToken, operatorClientRealm, newClient)
