@@ -63,13 +63,29 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
 
+		By("setting up Keycloak service account for the operator")
+		var setupErr error
+		keycloakCreds, setupErr = utils.SetupKeycloakOperatorAccess()
+		Expect(setupErr).NotTo(HaveOccurred(), "Failed to set up Keycloak operator access")
+
+		By("creating Keycloak credentials secret for the operator")
+		cmd = exec.Command("kubectl", "create", "secret", "generic", utils.KeycloakCredSecret,
+			"-n", namespace,
+			"--from-literal=KEYCLOAK_URL="+keycloakCreds.URL,
+			"--from-literal=KEYCLOAK_USER="+keycloakCreds.ClientID,
+			"--from-literal=KEYCLOAK_PASSWORD="+keycloakCreds.Secret,
+			"--from-literal=KEYCLOAK_REALM="+keycloakCreds.Realm,
+		)
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to create Keycloak credentials secret")
+
 		By("installing CRDs")
 		cmd = exec.Command("make", "install")
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
-		By("deploying the controller-manager")
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
+		By("deploying the controller-manager with Keycloak configuration")
+		cmd = exec.Command("make", "deploy-e2e", fmt.Sprintf("IMG=%s", projectImage))
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
 	})
@@ -82,7 +98,7 @@ var _ = Describe("Manager", Ordered, func() {
 		_, _ = utils.Run(cmd)
 
 		By("undeploying the controller-manager")
-		cmd = exec.Command("make", "undeploy")
+		cmd = exec.Command("make", "undeploy-e2e")
 		_, _ = utils.Run(cmd)
 
 		By("uninstalling CRDs")

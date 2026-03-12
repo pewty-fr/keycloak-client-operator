@@ -43,6 +43,18 @@ var (
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
 	projectImage = "example.com/keycloak-client-operator:v0.0.1"
+
+	// keycloakVersion is the Keycloak image tag to deploy for e2e tests.
+	// Override with KEYCLOAK_VERSION env var to run the compatibility matrix.
+	keycloakVersion = func() string {
+		if v := os.Getenv("KEYCLOAK_VERSION"); v != "" {
+			return v
+		}
+		return "26.2.4"
+	}()
+
+	// keycloakCreds holds the Keycloak credentials used to configure the operator deployment.
+	keycloakCreds *utils.KeycloakCredentials
 )
 
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,
@@ -81,6 +93,9 @@ var _ = BeforeSuite(func() {
 			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: CertManager is already installed. Skipping installation...\n")
 		}
 	}
+
+	By(fmt.Sprintf("installing Keycloak %s", keycloakVersion))
+	Expect(utils.InstallKeycloak(keycloakVersion)).To(Succeed(), "Failed to install Keycloak")
 })
 
 var _ = AfterSuite(func() {
@@ -89,4 +104,7 @@ var _ = AfterSuite(func() {
 		_, _ = fmt.Fprintf(GinkgoWriter, "Uninstalling CertManager...\n")
 		utils.UninstallCertManager()
 	}
+
+	By("uninstalling Keycloak")
+	utils.UninstallKeycloak()
 })

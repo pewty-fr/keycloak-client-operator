@@ -42,12 +42,25 @@ Keycloak Client Operator enables you to manage Keycloak clients (OAuth2/OIDC app
 - ✅ Metrics endpoint for monitoring
 - ✅ Multi-architecture images (amd64, arm64)
 
+## 🧪 Keycloak Compatibility Matrix
+
+The e2e test suite runs against multiple Keycloak versions on every pull request. Results below reflect the latest CI run.
+
+| Keycloak Version | Status | Notes |
+|-----------------|--------|-------|
+| 25.0.6 | [![E2E 25.0.6](https://github.com/pewty-fr/keycloak-client-operator/actions/workflows/test-e2e.yml/badge.svg)](https://github.com/pewty-fr/keycloak-client-operator/actions/workflows/test-e2e.yml) | Older minor, client credentials flow |
+| 26.0.7 | [![E2E 26.0.7](https://github.com/pewty-fr/keycloak-client-operator/actions/workflows/test-e2e.yml/badge.svg)](https://github.com/pewty-fr/keycloak-client-operator/actions/workflows/test-e2e.yml) | Current LTS series start |
+| 26.2.4 | [![E2E 26.2.4](https://github.com/pewty-fr/keycloak-client-operator/actions/workflows/test-e2e.yml/badge.svg)](https://github.com/pewty-fr/keycloak-client-operator/actions/workflows/test-e2e.yml) | Stable patch |
+| 26.5.5 | [![E2E 26.5.5](https://github.com/pewty-fr/keycloak-client-operator/actions/workflows/test-e2e.yml/badge.svg)](https://github.com/pewty-fr/keycloak-client-operator/actions/workflows/test-e2e.yml) | Latest stable |
+
+> The operator uses the Keycloak [client credentials grant](https://www.keycloak.org/docs/latest/server_admin/#_client_credentials) flow for authentication and the Keycloak Admin REST API for client lifecycle management.
+
 ## 🚀 Installation
 
 ### Prerequisites
 
 - Kubernetes 1.19+
-- Keycloak 15+ (tested with Keycloak 21+)
+- Keycloak 25+ (see compatibility matrix above)
 - Helm 3.0+ (for Helm installation)
 
 ### Option 1: Helm (Recommended)

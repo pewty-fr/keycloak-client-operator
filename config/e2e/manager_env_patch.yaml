@@ -1,0 +1,7 @@
+# Patch that adds Keycloak credentials to the manager container via a k8s secret.
+# The secret 'keycloak-operator-credentials' must exist in the manager namespace before applying.
+- op: add
+  path: /spec/template/spec/containers/0/envFrom
+  value:
+    - secretRef:
+        name: keycloak-operator-credentials

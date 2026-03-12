@@ -1,0 +1,9 @@
+# E2E overlay: extends config/default and injects Keycloak credentials from a k8s secret.
+# The secret 'keycloak-operator-credentials' is created by the e2e test suite before deploying.
+resources:
+- ../default
+
+patches:
+- path: manager_env_patch.yaml
+  target:
+    kind: Deployment
