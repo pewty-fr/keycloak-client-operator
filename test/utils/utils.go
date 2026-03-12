@@ -40,6 +40,7 @@ const (
 
 	keycloakNamespace      = "keycloak"
 	keycloakHelmRelease    = "keycloak"
+	keycloakAdminUser      = "admin"
 	keycloakAdminPass      = "admin"
 	keycloakLocalPort      = "18080"
 	operatorClientID       = "keycloak-operator"
@@ -76,6 +77,7 @@ func InstallKeycloak(version string) error {
 		keycloakHelmChart,
 		"--namespace", keycloakNamespace,
 		"--set", "production=false",
+		"--set", "auth.adminUser="+keycloakAdminUser,
 		"--set", "auth.adminPassword="+keycloakAdminPass,
 		"--set", "postgresql.enabled=false",
 		"--set", "image.tag="+version,
@@ -126,7 +128,7 @@ func SetupKeycloakOperatorAccess() (*KeycloakCredentials, error) {
 	gc := gocloak.NewClient("http://localhost:" + keycloakLocalPort)
 	gctx := context.Background()
 
-	token, err := gc.Login(gctx, "admin-cli", "", operatorClientRealm, "admin", keycloakAdminPass)
+	token, err := gc.Login(gctx, "admin-cli", "", operatorClientRealm, keycloakAdminUser, keycloakAdminPass)
 	if err != nil {
 		return nil, fmt.Errorf("failed to login to Keycloak: %w", err)
 	}
