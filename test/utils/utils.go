@@ -42,7 +42,7 @@ const (
 	keycloakHelmRelease = "keycloak"
 	keycloakAdminUser   = "admin"
 	keycloakAdminPass   = "admin"
-	keycloakLocalPort   = "18080"
+	keycloakLocalPort   = "8080"
 	operatorClientID    = "keycloak-operator"
 	operatorClientRealm = "master"
 	keycloakHelmChart   = "oci://ghcr.io/cloudpirates-io/helm-charts/keycloak"
@@ -76,11 +76,13 @@ func InstallKeycloak(version string) error {
 	cmd = exec.Command("helm", "upgrade", "--install", keycloakHelmRelease,
 		keycloakHelmChart,
 		"--namespace", keycloakNamespace,
-		"--set", "production=false",
-		"--set", "auth.adminUser="+keycloakAdminUser,
-		"--set", "auth.adminPassword="+keycloakAdminPass,
-		"--set", "postgresql.enabled=false",
+		"--set", "keycloak.production=false",
+		"--set", "keycloak.adminUser="+keycloakAdminUser,
+		"--set", "keycloak.adminPassword="+keycloakAdminPass,
+		"--set", "postgres.auth.username="+keycloakAdminUser,
+		"--set", "postgres.auth.password="+keycloakAdminPass,
 		"--set", "image.tag="+version,
+		"--version", "0.17.0",
 		"--wait",
 		"--timeout", "10m",
 	)
