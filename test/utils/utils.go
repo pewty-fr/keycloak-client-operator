@@ -19,11 +19,15 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
+	gocloak "github.com/Nerzal/gocloak/v13"
 	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
 )
 
@@ -33,10 +37,189 @@ const (
 
 	defaultKindBinary  = "kind"
 	defaultKindCluster = "kind"
+
+	keycloakNamespace   = "keycloak"
+	keycloakHelmRelease = "keycloak"
+	keycloakAdminUser   = "admin"
+	keycloakAdminPass   = "admin"
+	keycloakLocalPort   = "8080"
+	operatorClientID    = "keycloak-operator"
+	operatorClientRealm = "master"
+	keycloakHelmChart   = "oci://ghcr.io/cloudpirates-io/helm-charts/keycloak"
+	// KeycloakCredSecret is the k8s secret name used to pass Keycloak credentials to the operator.
+	KeycloakCredSecret = "keycloak-operator-credentials"
 )
+
+// KeycloakCredentials holds the credentials for the operator to authenticate with Keycloak.
+type KeycloakCredentials struct {
+	URL      string
+	ClientID string
+	Secret   string
+	Realm    string
+}
 
 func warnError(err error) {
 	_, _ = fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
+}
+
+// InstallKeycloak deploys Keycloak to the kind cluster using the CloudPirates helm chart.
+// The version parameter sets the Keycloak image tag (e.g. "26.2.4").
+func InstallKeycloak(version string) error {
+	_, _ = fmt.Fprintf(GinkgoWriter, "Installing Keycloak %s...\n", version)
+
+	// Create namespace (ignore error if it already exists)
+	// #nosec G204 -- test utility with controlled options
+	cmd := exec.Command("kubectl", "create", "ns", keycloakNamespace)
+	_, _ = Run(cmd)
+
+	// #nosec G204 -- test utility with controlled options
+	cmd = exec.Command("helm", "upgrade", "--install", keycloakHelmRelease,
+		keycloakHelmChart,
+		"--namespace", keycloakNamespace,
+		"--set", "keycloak.production=false",
+		"--set", "keycloak.adminUser="+keycloakAdminUser,
+		"--set", "keycloak.adminPassword="+keycloakAdminPass,
+		"--set", "postgres.auth.username="+keycloakAdminUser,
+		"--set", "postgres.auth.password="+keycloakAdminPass,
+		"--set", "image.tag="+version,
+		"--version", "0.17.0",
+		"--wait",
+		"--timeout", "10m",
+	)
+	if _, err := Run(cmd); err != nil {
+		return fmt.Errorf("failed to install Keycloak: %w", err)
+	}
+	return nil
+}
+
+// SetupKeycloakOperatorAccess configures a Keycloak service account client for the operator
+// and returns its credentials. It uses a temporary kubectl port-forward to reach Keycloak.
+func SetupKeycloakOperatorAccess() (*KeycloakCredentials, error) {
+	_, _ = fmt.Fprintf(GinkgoWriter, "Setting up Keycloak operator service account...\n")
+
+	// Discover service name
+	// #nosec G204 -- test utility
+	cmd := exec.Command("kubectl", "get", "svc", "-n", keycloakNamespace,
+		"-o", "jsonpath={.items[0].metadata.name}")
+	svcName, err := Run(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Keycloak service: %w", err)
+	}
+	svcName = strings.TrimSpace(svcName)
+	if svcName == "" {
+		return nil, fmt.Errorf("no service found in namespace %s", keycloakNamespace)
+	}
+
+	// Start port-forward
+	// #nosec G204 -- test utility with controlled options
+	pfCmd := exec.Command("kubectl", "port-forward",
+		fmt.Sprintf("svc/%s", svcName),
+		"-n", keycloakNamespace,
+		keycloakLocalPort+":8080",
+	)
+	if err := pfCmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start port-forward: %w", err)
+	}
+	defer func() { _ = pfCmd.Process.Kill() }()
+
+	if err := waitForPort(keycloakLocalPort, 30*time.Second); err != nil {
+		return nil, fmt.Errorf("Keycloak port-forward not ready: %w", err)
+	}
+
+	// Configure via gocloak
+	gc := gocloak.NewClient("http://localhost:" + keycloakLocalPort)
+	gctx := context.Background()
+
+	token, err := gc.LoginAdmin(gctx, keycloakAdminUser, keycloakAdminPass, operatorClientRealm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to login to Keycloak: %w", err)
+	}
+
+	// Remove any existing operator client
+	existing, _ := gc.GetClients(gctx, token.AccessToken, operatorClientRealm,
+		gocloak.GetClientsParams{ClientID: gocloak.StringP(operatorClientID)})
+	for _, c := range existing {
+		_ = gc.DeleteClient(gctx, token.AccessToken, operatorClientRealm, *c.ID)
+	}
+
+	// Create service account client
+	svcEnabled := true
+	newClient := gocloak.Client{
+		ClientID:                gocloak.StringP(operatorClientID),
+		ServiceAccountsEnabled:  &svcEnabled,
+		ClientAuthenticatorType: gocloak.StringP("client-secret"),
+	}
+	clientInternalID, err := gc.CreateClient(gctx, token.AccessToken, operatorClientRealm, newClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create operator client: %w", err)
+	}
+
+	// Assign realm-admin role to the service account
+	saUser, err := gc.GetClientServiceAccount(gctx, token.AccessToken, operatorClientRealm, clientInternalID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get service account user: %w", err)
+	}
+
+	realmMgmtClients, err := gc.GetClients(gctx, token.AccessToken, operatorClientRealm,
+		gocloak.GetClientsParams{ClientID: gocloak.StringP("realm-management")})
+	if err != nil || len(realmMgmtClients) == 0 {
+		return nil, fmt.Errorf("failed to get realm-management client: %w", err)
+	}
+	realmMgmtID := *realmMgmtClients[0].ID
+
+	adminRole, err := gc.GetClientRole(gctx, token.AccessToken, operatorClientRealm, realmMgmtID, "realm-admin")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get realm-admin role: %w", err)
+	}
+
+	if err := gc.AddClientRolesToUser(gctx, token.AccessToken, operatorClientRealm,
+		realmMgmtID, *saUser.ID, []gocloak.Role{*adminRole}); err != nil {
+		return nil, fmt.Errorf("failed to assign realm-admin role: %w", err)
+	}
+
+	// Retrieve generated client secret
+	creds, err := gc.GetClientSecret(gctx, token.AccessToken, operatorClientRealm, clientInternalID)
+	if err != nil || creds.Value == nil {
+		return nil, fmt.Errorf("failed to get client secret: %w", err)
+	}
+
+	keycloakURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:8080", svcName, keycloakNamespace)
+	return &KeycloakCredentials{
+		URL:      keycloakURL,
+		ClientID: operatorClientID,
+		Secret:   *creds.Value,
+		Realm:    operatorClientRealm,
+	}, nil
+}
+
+// UninstallKeycloak removes Keycloak from the cluster.
+func UninstallKeycloak() {
+	_, _ = fmt.Fprintf(GinkgoWriter, "Uninstalling Keycloak...\n")
+	// #nosec G204 -- test utility
+	cmd := exec.Command("helm", "uninstall", keycloakHelmRelease,
+		"--namespace", keycloakNamespace, "--ignore-not-found")
+	if _, err := Run(cmd); err != nil {
+		warnError(err)
+	}
+	// #nosec G204 -- test utility
+	cmd = exec.Command("kubectl", "delete", "ns", keycloakNamespace, "--ignore-not-found")
+	if _, err := Run(cmd); err != nil {
+		warnError(err)
+	}
+}
+
+// waitForPort blocks until the given TCP port on localhost is accepting connections or timeout elapses.
+func waitForPort(port string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", "localhost:"+port, time.Second)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("port %s not ready after %v", port, timeout)
 }
 
 // Run executes the provided command within this context

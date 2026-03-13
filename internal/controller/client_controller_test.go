@@ -18,16 +18,19 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"os"
 
+	gocloak "github.com/Nerzal/gocloak/v13"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	keycloakv1 "github.com/pewty-fr/keycloak-client-operator/api/v1"
 )
@@ -1012,6 +1015,423 @@ var _ = Describe("Client Controller", func() {
 			Entry("SAML", "saml", "saml"),
 			Entry("Docker auth", "docker-v2", "docker-v2"),
 		)
+	})
+
+	Context("When testing getClientCredentials", func() {
+		const secretNamespace = "default"
+
+		AfterEach(func() {
+			_ = k8sClient.DeleteAllOf(ctx, &corev1.Secret{}, client.InNamespace(secretNamespace),
+				client.MatchingLabels{"test-group": "get-credentials"})
+		})
+
+		It("Should read clientId and clientSecret from secret", func() {
+			secretName := "creds-test-secret"
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: secretName, Namespace: secretNamespace,
+					Labels: map[string]string{"test-group": "get-credentials"},
+				},
+				Data: map[string][]byte{
+					"clientId":     []byte("my-client"),
+					"clientSecret": []byte("my-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			realm := realmMaster
+			kcClient := &keycloakv1.Client{
+				ObjectMeta: metav1.ObjectMeta{Name: "creds-test", Namespace: secretNamespace},
+				Spec: keycloakv1.ClientSpec{
+					Realm:     &realm,
+					SecretRef: keycloakv1.ClientSecretReference{Name: secretName},
+				},
+			}
+			reconciler := &ClientReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			id, sec, err := reconciler.getClientCredentials(ctx, kcClient)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(id).To(Equal("my-client"))
+			Expect(sec).To(Equal("my-secret"))
+		})
+
+		It("Should use custom key names from SecretRef", func() {
+			secretName := "creds-custom-secret"
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: secretName, Namespace: secretNamespace,
+					Labels: map[string]string{"test-group": "get-credentials"},
+				},
+				Data: map[string][]byte{
+					"custom.id":  []byte("custom-client"),
+					"custom.sec": []byte("custom-secret"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			realm := realmMaster
+			kcClient := &keycloakv1.Client{
+				ObjectMeta: metav1.ObjectMeta{Name: "creds-custom-test", Namespace: secretNamespace},
+				Spec: keycloakv1.ClientSpec{
+					Realm: &realm,
+					SecretRef: keycloakv1.ClientSecretReference{
+						Name:            secretName,
+						ClientIDKey:     "custom.id",
+						ClientSecretKey: "custom.sec",
+					},
+				},
+			}
+			reconciler := &ClientReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			id, sec, err := reconciler.getClientCredentials(ctx, kcClient)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(id).To(Equal("custom-client"))
+			Expect(sec).To(Equal("custom-secret"))
+		})
+
+		It("Should return error when secret does not exist", func() {
+			realm := realmMaster
+			kcClient := &keycloakv1.Client{
+				ObjectMeta: metav1.ObjectMeta{Name: "creds-missing-test", Namespace: secretNamespace},
+				Spec: keycloakv1.ClientSpec{
+					Realm:     &realm,
+					SecretRef: keycloakv1.ClientSecretReference{Name: "nonexistent-secret"},
+				},
+			}
+			reconciler := &ClientReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			_, _, err := reconciler.getClientCredentials(ctx, kcClient)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("nonexistent-secret"))
+		})
+
+		It("Should return empty secret when clientSecret key is missing", func() {
+			secretName := "creds-no-secret-key"
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: secretName, Namespace: secretNamespace,
+					Labels: map[string]string{"test-group": "get-credentials"},
+				},
+				Data: map[string][]byte{
+					"clientId": []byte("only-id"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+
+			realm := realmMaster
+			kcClient := &keycloakv1.Client{
+				ObjectMeta: metav1.ObjectMeta{Name: "creds-no-secret-test", Namespace: secretNamespace},
+				Spec: keycloakv1.ClientSpec{
+					Realm:     &realm,
+					SecretRef: keycloakv1.ClientSecretReference{Name: secretName},
+				},
+			}
+			reconciler := &ClientReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			id, sec, err := reconciler.getClientCredentials(ctx, kcClient)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(id).To(Equal("only-id"))
+			Expect(sec).To(BeEmpty())
+		})
+	})
+
+	Context("When testing updateSecretWithCredentials", func() {
+		It("Should update existing secret with new credentials", func() {
+			secretName := "update-creds-secret"
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: "default"},
+				Data:       map[string][]byte{"clientId": []byte("old-id"), "clientSecret": []byte("old-secret")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, secret) }()
+
+			realm := realmMaster
+			kcClient := &keycloakv1.Client{
+				ObjectMeta: metav1.ObjectMeta{Name: "update-creds-test", Namespace: "default"},
+				Spec: keycloakv1.ClientSpec{
+					Realm:     &realm,
+					SecretRef: keycloakv1.ClientSecretReference{Name: secretName},
+				},
+			}
+			reconciler := &ClientReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			newID := "new-client-id"
+			newSecret := "new-client-secret"
+			err := reconciler.updateSecretWithCredentials(ctx, kcClient, &newID, &newSecret)
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: "default"}, updated)).To(Succeed())
+			Expect(string(updated.Data["clientId"])).To(Equal("new-client-id"))
+			Expect(string(updated.Data["clientSecret"])).To(Equal("new-client-secret"))
+		})
+
+		It("Should skip update when credentials are nil", func() {
+			secretName := "nil-creds-secret"
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: "default"},
+				Data:       map[string][]byte{"clientId": []byte("original")},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, secret) }()
+
+			realm := realmMaster
+			kcClient := &keycloakv1.Client{
+				ObjectMeta: metav1.ObjectMeta{Name: "nil-creds-test", Namespace: "default"},
+				Spec: keycloakv1.ClientSpec{
+					Realm:     &realm,
+					SecretRef: keycloakv1.ClientSecretReference{Name: secretName},
+				},
+			}
+			reconciler := &ClientReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			err := reconciler.updateSecretWithCredentials(ctx, kcClient, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			unchanged := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: "default"}, unchanged)).To(Succeed())
+			Expect(string(unchanged.Data["clientId"])).To(Equal("original"))
+		})
+	})
+
+	Context("When testing Reconcile with mock Keycloak", func() {
+		const reconcileNamespace = "default"
+
+		makeReconcilerWith := func(mock GoCloak) *ClientReconciler {
+			return &ClientReconciler{
+				Client:         k8sClient,
+				Scheme:         k8sClient.Scheme(),
+				KeycloakClient: mock,
+				KeycloakUser:   "operator-client",
+				KeycloakPass:   "operator-secret",
+				KeycloakRealm:  realmMaster,
+			}
+		}
+
+		makeSecret := func(name string) *corev1.Secret {
+			return &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: reconcileNamespace},
+				Data: map[string][]byte{
+					"clientId":     []byte("my-kc-client"),
+					"clientSecret": []byte("my-kc-secret"),
+				},
+			}
+		}
+
+		makeClient := func(name, secretName string, finalizers ...string) *keycloakv1.Client {
+			realm := realmMaster
+			return &keycloakv1.Client{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       name,
+					Namespace:  reconcileNamespace,
+					Finalizers: finalizers,
+				},
+				Spec: keycloakv1.ClientSpec{
+					Realm:     &realm,
+					SecretRef: keycloakv1.ClientSecretReference{Name: secretName},
+					Client:    keycloakv1.ClientRepresentation{Enabled: boolPtr(true)},
+				},
+			}
+		}
+
+		It("Should return error when Keycloak authentication fails", func() {
+			secret := makeSecret("auth-fail-secret")
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, secret) }()
+
+			resource := makeClient("auth-fail-client", "auth-fail-secret", clientFinalizer)
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			defer func() {
+				controllerutil.RemoveFinalizer(resource, clientFinalizer)
+				_ = k8sClient.Update(ctx, resource)
+				_ = k8sClient.Delete(ctx, resource)
+			}()
+
+			reconciler := makeReconcilerWith(errGoCloak("keycloak unreachable"))
+			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "auth-fail-client", Namespace: reconcileNamespace}}
+
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("keycloak unreachable"))
+		})
+
+		It("Should create a new client in Keycloak when it does not exist", func() {
+			secret := makeSecret("create-test-secret")
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, secret) }()
+
+			resource := makeClient("create-test-client", "create-test-secret", clientFinalizer)
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			defer func() {
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: "create-test-client", Namespace: reconcileNamespace}, resource)
+				controllerutil.RemoveFinalizer(resource, clientFinalizer)
+				_ = k8sClient.Update(ctx, resource)
+				_ = k8sClient.Delete(ctx, resource)
+			}()
+
+			createCalled := false
+			internalID := "internal-uuid-001"
+			retClientID := "my-kc-client"
+			retSecret := "keycloak-generated-secret"
+
+			mock := &mockGoCloak{
+				GetClientsFunc: func(_ context.Context, _, _ string, _ gocloak.GetClientsParams) ([]*gocloak.Client, error) {
+					return []*gocloak.Client{}, nil
+				},
+				CreateClientFunc: func(_ context.Context, _, _ string, _ gocloak.Client) (string, error) {
+					createCalled = true
+					return internalID, nil
+				},
+				GetClientFunc: func(_ context.Context, _, _, id string) (*gocloak.Client, error) {
+					Expect(id).To(Equal(internalID))
+					return &gocloak.Client{ClientID: &retClientID, Secret: &retSecret}, nil
+				},
+			}
+			reconciler := makeReconcilerWith(mock)
+			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "create-test-client", Namespace: reconcileNamespace}}
+
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(createCalled).To(BeTrue())
+
+			// Secret should be updated with generated credentials
+			updatedSecret := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "create-test-secret", Namespace: reconcileNamespace}, updatedSecret)).To(Succeed())
+			Expect(string(updatedSecret.Data["clientSecret"])).To(Equal("keycloak-generated-secret"))
+		})
+
+		It("Should update an existing client in Keycloak", func() {
+			secret := makeSecret("update-test-secret")
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, secret) }()
+
+			resource := makeClient("update-test-client", "update-test-secret", clientFinalizer)
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			defer func() {
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: "update-test-client", Namespace: reconcileNamespace}, resource)
+				controllerutil.RemoveFinalizer(resource, clientFinalizer)
+				_ = k8sClient.Update(ctx, resource)
+				_ = k8sClient.Delete(ctx, resource)
+			}()
+
+			updateCalled := false
+			existingID := "existing-uuid"
+			existingClientID := "my-kc-client"
+
+			mock := &mockGoCloak{
+				GetClientsFunc: func(_ context.Context, _, _ string, _ gocloak.GetClientsParams) ([]*gocloak.Client, error) {
+					return []*gocloak.Client{{ID: &existingID, ClientID: &existingClientID}}, nil
+				},
+				UpdateClientFunc: func(_ context.Context, _, _ string, c gocloak.Client) error {
+					updateCalled = true
+					Expect(c.ID).To(Equal(&existingID))
+					return nil
+				},
+			}
+			reconciler := makeReconcilerWith(mock)
+			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "update-test-client", Namespace: reconcileNamespace}}
+
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updateCalled).To(BeTrue())
+		})
+
+		It("Should delete client from Keycloak and remove finalizer on deletion", func() {
+			secret := makeSecret("delete-test-secret")
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, secret) }()
+
+			resource := makeClient("delete-test-client", "delete-test-secret", clientFinalizer)
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			// Trigger deletion
+			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+
+			deleteCalled := false
+			existingID := "to-delete-uuid"
+			existingClientID := "my-kc-client"
+
+			mock := &mockGoCloak{
+				GetClientsFunc: func(_ context.Context, _, _ string, _ gocloak.GetClientsParams) ([]*gocloak.Client, error) {
+					return []*gocloak.Client{{ID: &existingID, ClientID: &existingClientID}}, nil
+				},
+				DeleteClientFunc: func(_ context.Context, _, _, id string) error {
+					deleteCalled = true
+					Expect(id).To(Equal(existingID))
+					return nil
+				},
+			}
+			reconciler := makeReconcilerWith(mock)
+			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "delete-test-client", Namespace: reconcileNamespace}}
+
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(deleteCalled).To(BeTrue())
+
+			// Resource should have finalizer removed and be deleted
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: "delete-test-client", Namespace: reconcileNamespace}, &keycloakv1.Client{})
+				return errors.IsNotFound(err)
+			}).Should(BeTrue())
+		})
+
+		It("Should add finalizer on first reconciliation and requeue", func() {
+			secret := makeSecret("finalizer-add-secret")
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, secret) }()
+
+			// Create without finalizer
+			resource := makeClient("finalizer-add-client", "finalizer-add-secret")
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			defer func() {
+				r := &keycloakv1.Client{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: "finalizer-add-client", Namespace: reconcileNamespace}, r); err == nil {
+					controllerutil.RemoveFinalizer(r, clientFinalizer)
+					_ = k8sClient.Update(ctx, r)
+					_ = k8sClient.Delete(ctx, r)
+				}
+			}()
+
+			reconciler := makeReconcilerWith(&mockGoCloak{})
+			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "finalizer-add-client", Namespace: reconcileNamespace}}
+
+			result, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Requeue).To(BeTrue())
+
+			// Finalizer should be added
+			updated := &keycloakv1.Client{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "finalizer-add-client", Namespace: reconcileNamespace}, updated)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(updated, clientFinalizer)).To(BeTrue())
+		})
+
+		It("Should return error when CreateClient fails", func() {
+			secret := makeSecret("create-fail-secret")
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, secret) }()
+
+			resource := makeClient("create-fail-client", "create-fail-secret", clientFinalizer)
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			defer func() {
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: "create-fail-client", Namespace: reconcileNamespace}, resource)
+				controllerutil.RemoveFinalizer(resource, clientFinalizer)
+				_ = k8sClient.Update(ctx, resource)
+				_ = k8sClient.Delete(ctx, resource)
+			}()
+
+			mock := &mockGoCloak{
+				GetClientsFunc: func(_ context.Context, _, _ string, _ gocloak.GetClientsParams) ([]*gocloak.Client, error) {
+					return []*gocloak.Client{}, nil
+				},
+				CreateClientFunc: func(_ context.Context, _, _ string, _ gocloak.Client) (string, error) {
+					return "", fmt.Errorf("keycloak create error")
+				},
+			}
+			reconciler := makeReconcilerWith(mock)
+			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "create-fail-client", Namespace: reconcileNamespace}}
+
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("keycloak create error"))
+		})
 	})
 })
 

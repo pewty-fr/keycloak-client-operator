@@ -67,6 +67,9 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 # - CERT_MANAGER_INSTALL_SKIP=true
 KIND_CLUSTER ?= keycloak-client-operator-test-e2e
 
+# KEYCLOAK_VERSION sets the Keycloak image tag used in e2e tests (compatibility matrix).
+KEYCLOAK_VERSION ?= 26.2.4
+
 .PHONY: setup-test-e2e
 setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	@command -v $(KIND) >/dev/null 2>&1 || { \
@@ -83,12 +86,21 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 
 .PHONY: test-e2e
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) KEYCLOAK_VERSION=$(KEYCLOAK_VERSION) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
+
+.PHONY: deploy-e2e
+deploy-e2e: manifests kustomize ## Deploy controller with e2e config (Keycloak env from keycloak-operator-credentials secret).
+	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
+	"$(KUSTOMIZE)" build config/e2e | "$(KUBECTL)" apply -f -
+
+.PHONY: undeploy-e2e
+undeploy-e2e: kustomize ## Undeploy controller e2e configuration.
+	"$(KUSTOMIZE)" build config/e2e | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

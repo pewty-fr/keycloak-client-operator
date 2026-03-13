@@ -40,7 +40,7 @@ const clientFinalizer = "keycloak.pewty.fr/finalizer"
 type ClientReconciler struct {
 	client.Client
 	Scheme         *runtime.Scheme
-	KeycloakClient *gocloak.GoCloak
+	KeycloakClient GoCloak
 	KeycloakURL    string
 	KeycloakUser   string
 	KeycloakPass   string
@@ -214,7 +214,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 }
 
 // deleteClientInKeycloak deletes a client from Keycloak if it exists
-func (r *ClientReconciler) deleteClientInKeycloak(ctx context.Context, gc *gocloak.GoCloak, token string, kcClient *keycloakv1.Client, clientID string) error {
+func (r *ClientReconciler) deleteClientInKeycloak(ctx context.Context, gc GoCloak, token string, kcClient *keycloakv1.Client, clientID string) error {
 	logger := logf.FromContext(ctx)
 
 	clients, err := gc.GetClients(ctx, token, *kcClient.Spec.Realm, gocloak.GetClientsParams{
